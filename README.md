@@ -7,13 +7,16 @@ This project pulls data from Shopify (products, customers, orders, inventory), l
 - Extracts Shopify data via the Admin REST API
 - Transforms the raw API responses into database-ready records
 - Loads/upserts records into PostgreSQL
-- Builds an analytics summary (inventory alerts, customer insights, revenue summary, anomalies)
+- Builds an analytics summary (inventory alerts, customer insights, revenue summary, anomalies, and a short “action required” insights block)
 - Sends the report by email (SMTP SSL)
+
+**Inventory alert bands** (mutually exclusive, see `config/constants.py`): out of stock = 0; critical = 1 through `CRITICAL_STOCK_THRESHOLD`; low = one above critical through `LOW_STOCK_THRESHOLD`.
 
 ## Requirements
 
 - Python 3.10+ (recommended)
-- A PostgreSQL database
+- A PostgreSQL database and connection settings:
+  - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - Shopify Admin API access:
   - `SHOPIFY_STORE_URL`
   - `SHOPIFY_ACCESS_TOKEN`
@@ -66,7 +69,7 @@ python main.py --task etl
 python main.py --task report
 ```
 
-Note: the `--task` options call functions expected to be defined in `scheduler\\tasks.py`.
+Tasks are implemented in `scheduler\\tasks.py` (ETL only, reporting only, or full pipeline).
 
 ## Logs
 
