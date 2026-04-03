@@ -1,0 +1,104 @@
+from db.connection import get_cursor
+from config.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
+def get_duplicate_orders() -> list[dict]:
+    """
+    Returns customers who placed more than one order on the same day
+    with the same total price — likely duplicate charges.
+    """
+    sql = """
+        SELECT
+            customer_id,
+            DATE(created_at) AS order_date,
+            total_price,
+            COUNT(*) AS order_count
+        FROM orders
+        GROUP BY customer_id, DATE(created_at), total_price
+        HAVING COUNT(*) > 1
+        ORDER BY order_count DESC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql)
+        results = cursor.fetchall()
+
+    logger.info(f"Found {len(results)} potential duplicate orders.")
+    return [dict(r) for r in results]
+
+
+def get_orders_with_zero_value() -> list[dict]:
+    """
+    Returns paid orders with zero or negative total price — likely data issues.
+    """
+    sql = """
+        SELECT
+            o.id AS order_id,
+            o.customer_id,
+            o.email,
+            o.total_price,
+            o.financial_status,
+            o.created_at
+        FROM orders o
+        WHERE o.financial_status = 'paid'
+        AND o.total_price <= 0
+        ORDER BY o.created_at DESC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql)
+        results = cursor.fetchall()
+
+    logger.info(f"Found {len(results)} zero-value paid orders.")
+    return [dict(r) for r in results]
+
+
+def get_abnormal_discount_orders() -> list[dict]:
+    """
+    Returns orders where discounts exceed 80% of subtotal — unusually high.
+    """
+    sql = """
+        SELECT
+            o.id AS order_id,
+            o.customer_id,
+            o.email,
+            o.subtotal_price,
+            o.total_discounts,
+            ROUND(o.total_discounts / NULLIF(o.subtotal_price, 0) * 100, 2) AS discount_pct,
+            o.created_at
+        FROM orders o
+        WHERE o.subtotal_price > 0
+        AND (o.total_discounts / NULLIF(o.subtotal_price, 0)) >= 0.8
+        ORDER BY discount_pct DESC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql)
+        results = cursor.fetchall()
+
+    logger.info(f"Found {len(results)} orders with abnormal discounts.")
+    return [dict(r) for r in results]
+
+
+def get_products_with_no_sales() -> list[dict]:
+    """
+    Returns active products that have never appeared in any order.
+    """
+    sql = """
+        SELECT
+            p.id AS product_id,
+            p.title AS product_title,
+            p.vendor,
+            p.product_type,
+            p.created_at
+        FROM products p
+        LEFT JOIN order_items oi ON oi.product_id = p.id
+        WHERE p.status = 'active'
+        AND oi.id IS NULL
+        ORDER BY p.created_at DESC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql)
+        results = cursor.fetchall()
+
+    logger.info(f"Found {len(results)} active products with no sales.")
+    return [dict(r) for r in results]
