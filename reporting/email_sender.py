@@ -1,28 +1,40 @@
 import smtplib
 import ssl
 from email.message import EmailMessage
+from pathlib import Path
 from config import settings
 from config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
-def build_email(subject: str, body: str) -> EmailMessage:
+def build_email(subject: str, body: str, attachment_path: str | None = None) -> EmailMessage:
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = settings.EMAIL_SENDER
     msg["To"] = settings.EMAIL_RECIPIENT
     msg.set_content(body)
+
+    if attachment_path:
+        file_path = Path(attachment_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"Attachment file not found: {attachment_path}")
+        msg.add_attachment(
+            file_path.read_bytes(),
+            maintype="application",
+            subtype="pdf",
+            filename=file_path.name,
+        )
     return msg
 
 
-def send_email(subject: str, body: str) -> None:
+def send_email(subject: str, body: str, attachment_path: str | None = None) -> None:
     """
     Sends a plain text email via SMTP SSL on port 465.
     """
     logger.info(f"Sending email to {settings.EMAIL_RECIPIENT}...")
 
-    msg = build_email(subject, body)
+    msg = build_email(subject, body, attachment_path=attachment_path)
     context = ssl.create_default_context()
 
     try:

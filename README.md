@@ -1,6 +1,6 @@
 ## Shopify Automation Pipeline
 
-This project pulls data from Shopify (products, customers, orders, inventory), loads it into a PostgreSQL database, computes analytics, and emails a daily store intelligence report.
+This project pulls data from Shopify (products, customers, orders, inventory), loads it into a PostgreSQL database, computes analytics, and emails a daily store intelligence report as a PDF attachment.
 
 ## What it does
 
@@ -8,7 +8,7 @@ This project pulls data from Shopify (products, customers, orders, inventory), l
 - Transforms the raw API responses into database-ready records
 - Loads/upserts records into PostgreSQL
 - Builds an analytics summary (inventory alerts, customer insights, revenue summary, anomalies, and a short “action required” insights block)
-- Sends the report by email (SMTP SSL)
+- Generates a PDF report and sends it by email (SMTP SSL)
 
 **Inventory alert bands** (mutually exclusive, see `config/constants.py`): out of stock = 0; critical = 1 through `CRITICAL_STOCK_THRESHOLD`; low = one above critical through `LOW_STOCK_THRESHOLD`.
 

@@ -13,6 +13,7 @@ pytest==9.0.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 requests==2.33.1
+reportlab==4.4.10
 six==1.17.0
 tzdata==2025.3
 urllib3==2.6.3

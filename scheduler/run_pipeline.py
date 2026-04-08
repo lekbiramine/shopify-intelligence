@@ -18,9 +18,9 @@ from etl.load import (
     load_inventory,
 )
 from analytics.summary import build_summary
-from reporting.formatter import format_full_report
-from reporting.templates import get_email_subject, wrap_email_body
+from reporting.templates import get_email_subject
 from reporting.email_sender import send_email
+from reporting.pdf_report import create_report_pdf
 from utils.decorators import log_execution
 
 logger = get_logger(__name__)
@@ -61,10 +61,13 @@ def run_reporting() -> None:
     logger.info("Starting reporting pipeline...")
 
     summary = build_summary()
-    report_body = format_full_report(summary)
-    email_body = wrap_email_body(report_body)
+    pdf_path = create_report_pdf(summary)
     subject = get_email_subject()
-    send_email(subject, email_body)
+    email_body = (
+        "Your daily Store Intelligence report is attached as a PDF.\n\n"
+        f"Attachment: {pdf_path}"
+    )
+    send_email(subject, email_body, attachment_path=pdf_path)
 
     logger.info("Reporting pipeline completed.")
 
