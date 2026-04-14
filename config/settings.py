@@ -23,18 +23,38 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 
 # Validation
 required = {
-    "SHOPIFY_STORE_URL": SHOPIFY_STORE_URL,
-    "SHOPIFY_ACCESS_TOKEN": SHOPIFY_ACCESS_TOKEN,
     "DB_HOST": DB_HOST,
     "DB_NAME": DB_NAME,
     "DB_USER": DB_USER,
     "DB_PASSWORD": DB_PASSWORD,
-    "EMAIL_SENDER": EMAIL_SENDER,
-    "EMAIL_PASSWORD": EMAIL_PASSWORD,
-    "EMAIL_RECIPIENT": EMAIL_RECIPIENT,
-    "SMTP_HOST": SMTP_HOST,
 }
 
 missing = [key for key, value in required.items() if not value]
 if missing:
     raise EnvironmentError(f"Missing required environment variables: {missing}")
+
+
+def validate_shopify_pipeline_env() -> None:
+    required_shopify = {
+        "SHOPIFY_STORE_URL": SHOPIFY_STORE_URL,
+        "SHOPIFY_ACCESS_TOKEN": SHOPIFY_ACCESS_TOKEN,
+    }
+    missing_shopify = [key for key, value in required_shopify.items() if not value]
+    if missing_shopify:
+        raise EnvironmentError(
+            f"Missing Shopify pipeline environment variables: {missing_shopify}"
+        )
+
+
+def validate_email_env() -> None:
+    required_email = {
+        "EMAIL_SENDER": EMAIL_SENDER,
+        "EMAIL_PASSWORD": EMAIL_PASSWORD,
+        "EMAIL_RECIPIENT": EMAIL_RECIPIENT,
+        "SMTP_HOST": SMTP_HOST,
+    }
+    missing_email = [key for key, value in required_email.items() if not value]
+    if missing_email:
+        raise EnvironmentError(
+            f"Missing email environment variables: {missing_email}"
+        )

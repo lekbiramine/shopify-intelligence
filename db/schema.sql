@@ -1,3 +1,20 @@
+-- Stores table for multi-store onboarding
+CREATE TABLE IF NOT EXISTS stores (
+    id BIGSERIAL PRIMARY KEY,
+    shop_domain VARCHAR(255) UNIQUE NOT NULL,
+    access_token TEXT,
+    scope TEXT,
+    contact_email VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    connected_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Backfill / migration for older DBs
+ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255);
+
 -- Products table
 CREATE TABLE IF NOT EXISTS products (
     id BIGINT PRIMARY KEY,

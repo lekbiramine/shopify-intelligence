@@ -1,4 +1,5 @@
 from config.logging_config import get_logger
+from config import settings
 from etl.extract import (
     fetch_products,
     fetch_customers,
@@ -29,6 +30,7 @@ logger = get_logger(__name__)
 @log_execution
 def run_etl() -> None:
     logger.info("Starting ETL pipeline...")
+    settings.validate_shopify_pipeline_env()
 
     # Extract
     raw_products = fetch_products()

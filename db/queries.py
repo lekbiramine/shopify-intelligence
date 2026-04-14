@@ -4,6 +4,55 @@ from config.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+# ─── Stores ─────────────────────────────────────────────────────────────────
+
+def upsert_store_connection(
+    shop_domain: str,
+    access_token: str,
+    scope: str | None = None,
+    contact_email: str | None = None,
+) -> None:
+    sql = """
+        INSERT INTO stores (shop_domain, access_token, scope, contact_email, is_active, connected_at, updated_at)
+        VALUES (%s, %s, %s, %s, TRUE, NOW(), NOW())
+        ON CONFLICT (shop_domain) DO UPDATE SET
+            access_token = EXCLUDED.access_token,
+            scope = EXCLUDED.scope,
+            contact_email = COALESCE(EXCLUDED.contact_email, stores.contact_email),
+            is_active = TRUE,
+            connected_at = NOW(),
+            updated_at = NOW();
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (shop_domain, access_token, scope, contact_email))
+    logger.info(f"Connected store saved: {shop_domain}")
+
+
+def get_store_by_domain(shop_domain: str) -> dict | None:
+    sql = """
+        SELECT id, shop_domain, access_token, scope, contact_email, is_active, connected_at
+        FROM stores
+        WHERE shop_domain = %s
+        LIMIT 1;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (shop_domain,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def update_store_contact_email(shop_domain: str, contact_email: str) -> None:
+    sql = """
+        UPDATE stores
+        SET contact_email = %s,
+            updated_at = NOW()
+        WHERE shop_domain = %s;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (contact_email, shop_domain))
+    logger.info(f"Updated contact email for store: {shop_domain}")
+
+
 # ─── Products ───────────────────────────────────────────────────────────────
 
 def upsert_product(product: dict) -> None:

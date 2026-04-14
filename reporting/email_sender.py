@@ -8,11 +8,16 @@ from config.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def build_email(subject: str, body: str, attachment_path: str | None = None) -> EmailMessage:
+def build_email(
+    subject: str,
+    body: str,
+    attachment_path: str | None = None,
+    recipient: str | None = None,
+) -> EmailMessage:
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = settings.EMAIL_SENDER
-    msg["To"] = settings.EMAIL_RECIPIENT
+    msg["To"] = recipient or settings.EMAIL_RECIPIENT
     msg.set_content(body)
 
     if attachment_path:
@@ -28,13 +33,15 @@ def build_email(subject: str, body: str, attachment_path: str | None = None) -> 
     return msg
 
 
-def send_email(subject: str, body: str, attachment_path: str | None = None) -> None:
+def send_email(subject: str, body: str, attachment_path: str | None = None, recipient: str | None = None) -> None:
     """
     Sends a plain text email via SMTP SSL on port 465.
     """
-    logger.info(f"Sending email to {settings.EMAIL_RECIPIENT}...")
+    to_addr = recipient or settings.EMAIL_RECIPIENT
+    logger.info(f"Sending email to {to_addr}...")
+    settings.validate_email_env()
 
-    msg = build_email(subject, body, attachment_path=attachment_path)
+    msg = build_email(subject, body, attachment_path=attachment_path, recipient=to_addr)
     context = ssl.create_default_context()
 
     try:

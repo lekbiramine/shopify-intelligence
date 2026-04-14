@@ -1,6 +1,6 @@
 ## Shopify Automation Pipeline
 
-This project pulls data from Shopify (products, customers, orders, inventory), loads it into a PostgreSQL database, computes analytics, and emails a daily store intelligence report as a PDF attachment.
+This project pulls data from Shopify (products, customers, orders, inventory), loads it into a PostgreSQL database, computes analytics, and emails a daily store intelligence report as a PDF attachment. It also includes FastAPI-based Shopify OAuth onboarding so stores can connect in one click.
 
 ## What it does
 
@@ -9,6 +9,7 @@ This project pulls data from Shopify (products, customers, orders, inventory), l
 - Loads/upserts records into PostgreSQL
 - Builds an analytics summary (inventory alerts, customer insights, revenue summary, anomalies, and a short “action required” insights block)
 - Generates a PDF report and sends it by email (SMTP SSL)
+- Provides OAuth onboarding endpoints for connecting new Shopify stores
 
 **Inventory alert bands** (mutually exclusive, see `config/constants.py`): out of stock = 0; critical = 1 through `CRITICAL_STOCK_THRESHOLD`; low = one above critical through `LOW_STOCK_THRESHOLD`.
 
@@ -20,6 +21,11 @@ This project pulls data from Shopify (products, customers, orders, inventory), l
 - Shopify Admin API access:
   - `SHOPIFY_STORE_URL`
   - `SHOPIFY_ACCESS_TOKEN`
+- Shopify OAuth app settings (for onboarding API):
+  - `SHOPIFY_API_KEY`
+  - `SHOPIFY_API_SECRET`
+  - `SHOPIFY_APP_BASE_URL` (for callback URL, e.g. `http://localhost:8000`)
+  - `SHOPIFY_SCOPES` (optional; defaults provided)
 - SMTP credentials for sending email:
   - `SMTP_HOST`, `SMTP_PORT`
   - `EMAIL_SENDER`, `EMAIL_PASSWORD`
@@ -70,6 +76,19 @@ python main.py --task report
 ```
 
 Tasks are implemented in `scheduler\\tasks.py` (ETL only, reporting only, or full pipeline).
+
+### Run OAuth onboarding API (FastAPI)
+
+```bash
+uvicorn onboarding.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Key routes:
+
+- `GET /` - simple "Connect your store" page
+- `GET /connect?shop=your-store.myshopify.com` - starts Shopify OAuth
+- `POST /connect` - form-based OAuth start
+- `GET /oauth/callback` - Shopify OAuth callback, token exchange, and store save
 
 ## Logs
 
