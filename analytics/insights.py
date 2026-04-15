@@ -29,8 +29,8 @@ def _build_insight(
     }
 
 
-def insight_churned_customers() -> dict | None:
-    churned = get_churned_customers()
+def insight_churned_customers(store_id: int) -> dict | None:
+    churned = get_churned_customers(store_id)
     if not churned:
         return None
 
@@ -50,8 +50,8 @@ def insight_churned_customers() -> dict | None:
     )
 
 
-def insight_high_return_rate() -> list[dict]:
-    products = get_high_return_rate_products()
+def insight_high_return_rate(store_id: int) -> list[dict]:
+    products = get_high_return_rate_products(store_id)
     insights = []
 
     for p in products:
@@ -68,8 +68,8 @@ def insight_high_return_rate() -> list[dict]:
     return insights
 
 
-def insight_dead_inventory() -> list[dict]:
-    products = get_products_with_no_sales()
+def insight_dead_inventory(store_id: int) -> list[dict]:
+    products = get_products_with_no_sales(store_id)
     if not products:
         return []
 
@@ -91,8 +91,8 @@ def insight_dead_inventory() -> list[dict]:
     ]
 
 
-def insight_high_value_customers() -> dict | None:
-    loyal = get_loyal_customers()
+def insight_high_value_customers(store_id: int) -> dict | None:
+    loyal = get_loyal_customers(store_id)
     if not loyal:
         return None
 
@@ -111,8 +111,8 @@ def insight_high_value_customers() -> dict | None:
     )
 
 
-def insight_abnormal_discounts() -> list[dict]:
-    orders = get_abnormal_discount_orders()
+def insight_abnormal_discounts(store_id: int) -> list[dict]:
+    orders = get_abnormal_discount_orders(store_id)
     insights = []
 
     for o in orders:
@@ -128,8 +128,8 @@ def insight_abnormal_discounts() -> list[dict]:
     return insights
 
 
-def insight_duplicate_orders() -> list[dict]:
-    orders = get_duplicate_orders()
+def insight_duplicate_orders(store_id: int) -> list[dict]:
+    orders = get_duplicate_orders(store_id)
     insights = []
 
     for o in orders:
@@ -148,7 +148,7 @@ def insight_duplicate_orders() -> list[dict]:
     return insights
 
 
-def build_insights() -> list[dict]:
+def build_insights(store_id: int) -> list[dict]:
     """
     Aggregates all insights into a flat list sorted by severity.
     """
@@ -158,22 +158,14 @@ def build_insights() -> list[dict]:
     insights = []
 
     # Single insights
-    for fn in [
-        insight_churned_customers,
-        insight_high_value_customers,
-    ]:
-        result = fn()
+    for fn in [insight_churned_customers, insight_high_value_customers]:
+        result = fn(store_id)
         if result:
             insights.append(result)
 
     # List insights
-    for fn in [
-        insight_high_return_rate,
-        insight_dead_inventory,
-        insight_abnormal_discounts,
-        insight_duplicate_orders,
-    ]:
-        insights.extend(fn())
+    for fn in [insight_high_return_rate, insight_dead_inventory, insight_abnormal_discounts, insight_duplicate_orders]:
+        insights.extend(fn(store_id))
 
     insights.sort(key=lambda x: severity_order.get(x["severity"], 99))
 

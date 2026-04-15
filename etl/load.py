@@ -95,3 +95,11 @@ def load_orders(orders: list[dict], order_items: list[dict]) -> None:
 def load_inventory(inventory: list[dict]) -> None:
     logger.info(f"Loading {len(inventory)} inventory records into database...")
     _load_records(inventory, upsert_inventory, "Inventory")
+
+
+def attach_store_id(records: list[dict], store_id: int) -> list[dict]:
+    if not records:
+        return []
+    for r in records:
+        r["store_id"] = store_id
+    return records

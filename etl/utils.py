@@ -6,18 +6,19 @@ from config.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def get_shopify_headers() -> dict:
+def get_shopify_headers(access_token: str | None = None) -> dict:
     return {
-        "X-Shopify-Access-Token": settings.SHOPIFY_ACCESS_TOKEN,
+        "X-Shopify-Access-Token": access_token or settings.SHOPIFY_ACCESS_TOKEN,
         "Content-Type": "application/json",
     }
 
 
-def build_shopify_url(endpoint: str) -> str:
-    return f"https://{settings.SHOPIFY_STORE_URL}/admin/api/{constants.SHOPIFY_API_VERSION}/{endpoint}"
+def build_shopify_url(endpoint: str, shop_domain: str | None = None) -> str:
+    domain = shop_domain or settings.SHOPIFY_STORE_URL
+    return f"https://{domain}/admin/api/{constants.SHOPIFY_API_VERSION}/{endpoint}"
 
 
-def paginated_get(endpoint: str, key: str, params: dict = None) -> list:
+def paginated_get(endpoint: str, key: str, params: dict = None, *, shop_domain: str | None = None, access_token: str | None = None) -> list:
     """
     Fetches all pages from a Shopify endpoint using Link header pagination.
     
@@ -26,8 +27,8 @@ def paginated_get(endpoint: str, key: str, params: dict = None) -> list:
     :param params: optional query parameters
     :return: flat list of all records across all pages
     """
-    url = build_shopify_url(endpoint)
-    headers = get_shopify_headers()
+    url = build_shopify_url(endpoint, shop_domain=shop_domain)
+    headers = get_shopify_headers(access_token=access_token)
     results = []
 
     if params is None:

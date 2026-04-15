@@ -15,17 +15,26 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from config.logging_config import get_logger
-from db.queries import get_store_by_domain, update_store_contact_email, upsert_store_connection
+from db.queries import (
+    claim_report_send_slot,
+    get_store_by_domain,
+    update_store_timezone,
+    set_store_schedule,
+    update_store_contact_email,
+    upsert_store_contact_email,
+    upsert_store_connection,
+)
 from reporting.email_sender import send_email
-from reporting.pdf_report import create_report_pdf
-from reporting.templates import get_email_subject
-from analytics.summary import build_summary
+from scheduler.run_pipeline import run_etl_for_store, run_reporting_for_store
 
 logger = get_logger(__name__)
 
 app = FastAPI(title="Shopify Store Onboarding")
 SESSION_SECRET = os.getenv("ONBOARDING_SESSION_SECRET") or secrets.token_hex(32)
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax", https_only=False)
+# For paid-client deployments, cookies should be HTTPS-only.
+# If you're developing locally over HTTP, set `ONBOARDING_HTTPS_ONLY=false`.
+HTTPS_ONLY = (os.getenv("ONBOARDING_HTTPS_ONLY") or "true").strip().lower() not in {"0", "false", "no"}
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax", https_only=HTTPS_ONLY)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -37,6 +46,29 @@ SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET", "")
 SHOPIFY_APP_BASE_URL = os.getenv("SHOPIFY_APP_BASE_URL", "")
 SHOPIFY_SCOPES = os.getenv("SHOPIFY_SCOPES", "read_products,read_customers,read_orders,read_inventory")
 SHOPIFY_API_VERSION = os.getenv("SHOPIFY_API_VERSION", "2025-01")
+ADMIN_NOTIFY_EMAIL = (os.getenv("ADMIN_NOTIFY_EMAIL") or "").strip()
+
+
+def _fetch_shop_timezone(shop_domain: str, access_token: str) -> str:
+    """
+    Fetch IANA timezone from Shopify shop endpoint.
+    Returns "UTC" on failure.
+    """
+    try:
+        url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/shop.json"
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+        resp = requests.get(url, headers=headers, timeout=20)
+        resp.raise_for_status()
+        shop = (resp.json() or {}).get("shop") or {}
+        tz = (shop.get("iana_timezone") or "").strip()
+        if tz and "/" in tz:
+            return tz
+    except Exception:
+        logger.exception("Failed to fetch Shopify timezone for %s", shop_domain)
+    return "UTC"
 
 
 def _ensure_oauth_env() -> None:
@@ -232,7 +264,7 @@ def _connect_page_html(message: str = "", message_kind: str = "success") -> str:
               <ul>
                 <li>You’ll authorize access in Shopify (read-only scopes).</li>
                 <li>We save your store connection securely in Postgres.</li>
-                <li>You can send a PDF report anytime from the connected page.</li>
+                <li>We email your first report right away, then you can activate a daily schedule.</li>
               </ul>
             </div>
           </aside>
@@ -250,6 +282,9 @@ def _connected_page_html(
     banner_kind: str = "success",
     *,
     ask_for_email: bool = False,
+    schedule_time: str = "",
+    schedule_active: bool = False,
+    schedule_timezone: str = "UTC",
 ) -> str:
     banner_html = ""
     if banner:
@@ -266,6 +301,11 @@ def _connected_page_html(
           <div class="muted">We’ll save this for next time.</div>
         </div>
         """
+    schedule_badge = (
+        '<span class="pill ok">Active</span>' if schedule_active else '<span class="pill muted">Not active</span>'
+    )
+    schedule_time = (schedule_time or "").strip() or "20:00"
+    tz_label = (schedule_timezone or "UTC").strip() or "UTC"
     return f"""<!doctype html>
 <html>
   <head>
@@ -289,17 +329,34 @@ def _connected_page_html(
         <div class="grid">
           <section class="panel">
             <h2 class="title">Store connected</h2>
-            <p class="lead">Send a fresh PDF report to your email.</p>
+            <p class="lead">We’ll email your report automatically based on your schedule.</p>
             {banner_html}
             <div class="kv">
               <div class="row"><span class="k">Store</span><span class="v">{safe_shop}</span></div>
               <div class="row"><span class="k">Recipient</span><span class="v">{safe_email or "Not set"}</span></div>
+              <div class="row"><span class="k">Daily schedule</span><span class="v">{(schedule_time or "Not set")} {schedule_badge}</span></div>
+              <div class="row"><span class="k">Timezone</span><span class="v">{tz_label}</span></div>
             </div>
-            <form action="/send-report" method="post" class="actions">
+            <form action="/activate-schedule" method="post" class="actions">
               <input type="hidden" name="shop" value="{safe_shop}" />
               {email_field_html}
-              <button class="btn btn-primary" type="submit">Send email report now</button>
-              <a class="btn btn-secondary" href="/">Connect another store</a>
+              <div class="schedule-grid">
+                <div class="field" style="margin:0;">
+                  <label for="daily_time">Daily time</label>
+                  <input
+                    id="daily_time"
+                    name="daily_time"
+                    type="time"
+                    step="60"
+                    value="{schedule_time}"
+                    class="time"
+                    required
+                  />
+                  <div class="muted">We’ll send it at this time in your store’s timezone.</div>
+                </div>
+                <button class="btn btn-primary" type="submit">Activate daily reports</button>
+                <a class="btn btn-secondary" href="/">Connect another store</a>
+              </div>
             </form>
           </section>
           <aside class="panel">
@@ -330,9 +387,18 @@ def connect_get(shop: str = Query(..., description="Store domain")) -> RedirectR
 
 @app.post("/connect")
 def connect_post(request: Request, shop: str = Form(...), email: str = Form(...)) -> RedirectResponse:
-    request.session["contact_email"] = (email or "").strip()
-    request.session["shop_domain"] = _normalize_shop_domain(shop)
-    return _start_oauth(shop)
+    contact_email = (email or "").strip()
+    shop_domain = _normalize_shop_domain(shop)
+    request.session["contact_email"] = contact_email
+    request.session["shop_domain"] = shop_domain
+
+    # Persist early so callback can still find it even if sessions are dropped.
+    try:
+        upsert_store_contact_email(shop_domain, contact_email)
+    except Exception:
+        logger.exception("Failed to persist contact email before OAuth callback")
+
+    return _start_oauth(shop_domain)
 
 
 def _start_oauth(shop: str) -> RedirectResponse:
@@ -391,16 +457,56 @@ def oauth_callback(
         if not access_token:
             return _connect_page_html(message="Error: Shopify token exchange failed. Please retry Connect.", message_kind="error")
 
-        contact_email = (request.session.get("contact_email") or "").strip() or None
+        # Session cookies can be missing during callback (proxy / browser settings),
+        # so we treat session email as optional and then read back the DB record.
+        contact_email_from_session = (request.session.get("contact_email") or "").strip() or None
         upsert_store_connection(
             shop_domain=shop_domain,
             access_token=access_token,
             scope=scope,
-            contact_email=contact_email,
+            contact_email=contact_email_from_session,
         )
 
         logger.info(f"Store connected via OAuth: {shop_domain}")
         request.session["shop_domain"] = shop_domain
+
+        # Detect timezone from Shopify and persist it for scheduling.
+        tz = _fetch_shop_timezone(shop_domain, access_token)
+        try:
+            update_store_timezone(shop_domain, tz)
+        except Exception:
+            logger.exception("Failed to persist report timezone for %s", shop_domain)
+
+        store = get_store_by_domain(shop_domain) or {}
+        contact_email = (store.get("contact_email") or "").strip() or None
+        if contact_email:
+            request.session["contact_email"] = contact_email
+
+        # Send first report immediately after connect (best-effort).
+        if contact_email:
+            try:
+                if claim_report_send_slot(shop_domain):
+                    logger.info("Sending first report after connect to %s (%s)", contact_email, shop_domain)
+                    store = get_store_by_domain(shop_domain) or {}
+                    store_id = store.get("id")
+                    if store_id:
+                        run_etl_for_store(store_id=store_id, shop_domain=shop_domain, access_token=access_token)
+                        run_reporting_for_store(store_id=store_id, recipient_email=contact_email)
+                    request.session["connected_banner"] = "Check your inbox — we just emailed you a sneak peek of your first report."
+                    request.session["connected_banner_kind"] = "success"
+                else:
+                    logger.info("First report blocked by 24h limiter for %s", shop_domain)
+                    request.session["connected_banner"] = "Store connected. Your first report is already queued recently — please check your inbox."
+                    request.session["connected_banner_kind"] = "success"
+            except Exception:
+                logger.exception("Failed to send first report after connect")
+                request.session["connected_banner"] = "Store connected. We couldn’t send the first report automatically — please try again later."
+                request.session["connected_banner_kind"] = "error"
+        else:
+            logger.info("Skipping first report (missing contact email) for %s", shop_domain)
+            request.session["connected_banner"] = "Store connected. Add an email address to activate daily reports."
+            request.session["connected_banner_kind"] = "error"
+
         return RedirectResponse(url="/connected", status_code=303)
     except requests.RequestException as exc:
         logger.exception("Shopify token exchange failed")
@@ -420,16 +526,50 @@ def connected(request: Request) -> str:
         # fallback from DB if session missing
         store = get_store_by_domain(shop_domain)
         contact_email = (store or {}).get("contact_email") or ""
-    return _connected_page_html(shop_domain=shop_domain, email=contact_email, ask_for_email=not bool(contact_email))
-
-
-@app.post("/send-report", response_class=HTMLResponse)
-def send_report(request: Request, shop: str = Form(...), email: str | None = Form(default=None)) -> str:
-    shop_domain = _normalize_shop_domain(shop)
     store = get_store_by_domain(shop_domain) or {}
-    to_addr = (email or "").strip()
-    if not to_addr:
+    banner = (request.session.pop("connected_banner", "") or "").strip()
+    banner_kind = (request.session.pop("connected_banner_kind", "") or "success").strip()
+    schedule_time = (store.get("report_schedule_time") or "").strip()
+    schedule_active = bool(store.get("report_schedule_active"))
+    schedule_timezone = (store.get("report_timezone") or "UTC").strip() or "UTC"
+    return _connected_page_html(
+        shop_domain=shop_domain,
+        email=contact_email,
+        banner=banner,
+        banner_kind=banner_kind,
+        ask_for_email=not bool(contact_email),
+        schedule_time=schedule_time,
+        schedule_active=schedule_active,
+        schedule_timezone=schedule_timezone,
+    )
+
+
+@app.post("/activate-schedule", response_class=HTMLResponse)
+def activate_schedule(
+    request: Request,
+    shop: str = Form(...),
+    daily_time: str = Form(...),
+    email: str | None = Form(default=None),
+) -> str:
+    shop_domain = _normalize_shop_domain(shop)
+    store = get_store_by_domain(shop_domain)
+    if not store:
+        return _connect_page_html(message="Please connect your store first.", message_kind="error")
+
+    if not bool(store.get("is_active")):
         to_addr = (store.get("contact_email") or request.session.get("contact_email") or "").strip()
+        return _connected_page_html(
+            shop_domain,
+            to_addr,
+            banner="This store connection is inactive. Please reconnect your store to enable reports.",
+            banner_kind="error",
+            ask_for_email=not bool(to_addr),
+            schedule_time=(store.get("report_schedule_time") or "").strip(),
+            schedule_active=bool(store.get("report_schedule_active")),
+            schedule_timezone=(store.get("report_timezone") or "UTC").strip() or "UTC",
+        )
+
+    to_addr = (email or "").strip() or (store.get("contact_email") or request.session.get("contact_email") or "").strip()
     if not to_addr:
         return _connected_page_html(
             shop_domain,
@@ -437,6 +577,9 @@ def send_report(request: Request, shop: str = Form(...), email: str | None = For
             banner="Missing email address for reports.",
             banner_kind="error",
             ask_for_email=True,
+            schedule_time=(store.get("report_schedule_time") or "").strip(),
+            schedule_active=bool(store.get("report_schedule_active")),
+            schedule_timezone=(store.get("report_timezone") or "UTC").strip() or "UTC",
         )
 
     # Persist email for future use
@@ -447,13 +590,48 @@ def send_report(request: Request, shop: str = Form(...), email: str | None = For
     except Exception:
         logger.exception("Failed to persist contact email")
 
-    summary = build_summary()
-    pdf_path = create_report_pdf(summary)
-    subject = get_email_subject()
-    body = (
-        "Your Store Intelligence report is attached as a PDF.\n\n"
-        f"Store: {shop_domain}\n"
-        f"Attachment: {pdf_path}"
+    time_str = (daily_time or "").strip()
+    if len(time_str) != 5 or time_str[2] != ":":
+        return _connected_page_html(
+            shop_domain,
+            to_addr,
+            banner="Please choose a valid daily time.",
+            banner_kind="error",
+            schedule_time=(store.get("report_schedule_time") or "").strip(),
+            schedule_active=bool(store.get("report_schedule_active")),
+            schedule_timezone=(store.get("report_timezone") or "UTC").strip() or "UTC",
+        )
+
+    set_store_schedule(shop_domain, time_str, active=True)
+
+    # Notify admin (best-effort) with access token so you can run the daily job manually for now.
+    try:
+        if ADMIN_NOTIFY_EMAIL:
+            fresh = get_store_by_domain(shop_domain) or store
+            token = fresh.get("access_token") or ""
+            subject = f"Daily report activated: {shop_domain}"
+            body = (
+                "A store activated daily reports.\n\n"
+                f"Store: {shop_domain}\n"
+                f"Daily time: {time_str}\n"
+                f"Recipient: {to_addr}\n"
+                f"Access token: [redacted]\n"
+            )
+            send_email(subject, body, recipient=ADMIN_NOTIFY_EMAIL)
+    except Exception:
+        logger.exception("Failed to notify admin on schedule activation")
+
+    return _connected_page_html(
+        shop_domain,
+        to_addr,
+        banner=f"Activated. You’ll receive your report daily at {time_str}.",
+        banner_kind="success",
+        schedule_time=time_str,
+        schedule_active=True,
+        schedule_timezone=(store.get("report_timezone") or "UTC").strip() or "UTC",
     )
-    send_email(subject, body, attachment_path=pdf_path, recipient=to_addr)
-    return _connected_page_html(shop_domain, to_addr, banner="Email sent successfully.", banner_kind="success")
+
+
+#
+# Note: Manual "send now" endpoint removed for paid-client flow.
+# Reports are sent automatically on connect (sneak peek) and on the daily schedule.

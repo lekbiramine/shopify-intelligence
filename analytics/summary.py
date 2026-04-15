@@ -25,7 +25,7 @@ from config.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def build_summary() -> dict:
+def build_summary(store_id: int) -> dict:
     """
     Aggregates all analytics and insights into a single summary dict
     passed to the reporting layer.
@@ -33,27 +33,27 @@ def build_summary() -> dict:
     logger.info("Building full analytics summary...")
 
     summary = {
-        "insights": build_insights(),
+        "insights": build_insights(store_id),
         "inventory": {
-            "low_stock": get_low_stock_products(),
-            "critical_stock": get_critical_stock_products(),
-            "out_of_stock": get_out_of_stock_products(),
+            "low_stock": get_low_stock_products(store_id),
+            "critical_stock": get_critical_stock_products(store_id),
+            "out_of_stock": get_out_of_stock_products(store_id),
         },
         "customers": {
-            "churned": get_churned_customers(),
-            "loyal": get_loyal_customers(),
-            "never_returned": get_never_returned_customers(),
+            "churned": get_churned_customers(store_id),
+            "loyal": get_loyal_customers(store_id),
+            "never_returned": get_never_returned_customers(store_id),
         },
         "revenue": {
-            "summary": get_revenue_summary(),
-            "by_product": get_revenue_by_product(),
-            "high_return_rate": get_high_return_rate_products(),
+            "summary": get_revenue_summary(store_id),
+            "by_product": get_revenue_by_product(store_id),
+            "high_return_rate": get_high_return_rate_products(store_id),
         },
         "anomalies": {
-            "duplicate_orders": get_duplicate_orders(),
-            "zero_value_orders": get_orders_with_zero_value(),
-            "abnormal_discounts": get_abnormal_discount_orders(),
-            "no_sales_products": get_products_with_no_sales(),
+            "duplicate_orders": get_duplicate_orders(store_id),
+            "zero_value_orders": get_orders_with_zero_value(store_id),
+            "abnormal_discounts": get_abnormal_discount_orders(store_id),
+            "no_sales_products": get_products_with_no_sales(store_id),
         },
     }
 
