@@ -90,6 +90,26 @@ Key routes:
 - `POST /connect` - form-based OAuth start
 - `GET /oauth/callback` - Shopify OAuth callback, token exchange, and store save
 
+### Run manual CSV service workflow (no OAuth)
+
+This temporary workflow keeps FastAPI/OAuth code in place for long-term automation, but removes onboarding friction for early users.
+Clients export store data as CSV files, and you process/report locally using the same analytics and PDF/email reporting pipeline.
+
+Expected CSV files in one folder:
+
+- `products.csv`
+- `variants.csv`
+- `customers.csv`
+- `orders.csv`
+- `order_items.csv`
+- `inventory.csv`
+
+Run:
+
+```bash
+python scheduler\\run_manual_csv_reports.py --shop-domain client-a.myshopify.com --recipient-email owner@client.com --data-dir data\\manual_export
+```
+
 ## Logs
 
 Logs are written to `logs/`:

@@ -55,7 +55,11 @@ def _load_records(records: list[dict], upsert_fn, label: str) -> None:
         try:
             with get_cursor(commit=True) as cursor:
                 for j, record in enumerate(batch, start=i + 1):
-                    ok = _upsert_with_retry(upsert_fn, record, label)
+                    ok = _upsert_with_retry(
+                        lambda r: upsert_fn(r, cursor=cursor),
+                        record,
+                        label,
+                    )
                     if ok:
                         success += 1
                     else:

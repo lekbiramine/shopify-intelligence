@@ -148,7 +148,7 @@ def update_store_contact_email(shop_domain: str, contact_email: str) -> None:
 
 # ─── Products ───────────────────────────────────────────────────────────────
 
-def upsert_product(product: dict) -> None:
+def upsert_product(product: dict, cursor=None) -> None:
     sql = """
         INSERT INTO products (store_id, id, title, vendor, product_type, status, created_at, updated_at)
         VALUES (%(store_id)s, %(id)s, %(title)s, %(vendor)s, %(product_type)s, %(status)s, %(created_at)s, %(updated_at)s)
@@ -160,14 +160,17 @@ def upsert_product(product: dict) -> None:
             updated_at = EXCLUDED.updated_at,
             synced_at = NOW();
     """
-    with get_cursor(commit=True) as cursor:
+    if cursor is not None:
         cursor.execute(sql, product)
+    else:
+        with get_cursor(commit=True) as _cursor:
+            _cursor.execute(sql, product)
     logger.debug(f"Upserted product {product['id']} (store_id={product.get('store_id')})")
 
 
 # ─── Variants ───────────────────────────────────────────────────────────────
 
-def upsert_variant(variant: dict) -> None:
+def upsert_variant(variant: dict, cursor=None) -> None:
     sql = """
         INSERT INTO variants (store_id, id, product_id, title, sku, price, inventory_quantity, updated_at)
         VALUES (%(store_id)s, %(id)s, %(product_id)s, %(title)s, %(sku)s, %(price)s, %(inventory_quantity)s, %(updated_at)s)
@@ -179,14 +182,17 @@ def upsert_variant(variant: dict) -> None:
             updated_at = EXCLUDED.updated_at,
             synced_at = NOW();
     """
-    with get_cursor(commit=True) as cursor:
+    if cursor is not None:
         cursor.execute(sql, variant)
+    else:
+        with get_cursor(commit=True) as _cursor:
+            _cursor.execute(sql, variant)
     logger.debug(f"Upserted variant {variant['id']} (store_id={variant.get('store_id')})")
 
 
 # ─── Customers ──────────────────────────────────────────────────────────────
 
-def upsert_customer(customer: dict) -> None:
+def upsert_customer(customer: dict, cursor=None) -> None:
     sql = """
         INSERT INTO customers (store_id, id, email, first_name, last_name, orders_count, total_spent, created_at, updated_at)
         VALUES (%(store_id)s, %(id)s, %(email)s, %(first_name)s, %(last_name)s, %(orders_count)s, %(total_spent)s, %(created_at)s, %(updated_at)s)
@@ -199,14 +205,17 @@ def upsert_customer(customer: dict) -> None:
             updated_at = EXCLUDED.updated_at,
             synced_at = NOW();
     """
-    with get_cursor(commit=True) as cursor:
+    if cursor is not None:
         cursor.execute(sql, customer)
+    else:
+        with get_cursor(commit=True) as _cursor:
+            _cursor.execute(sql, customer)
     logger.debug(f"Upserted customer {customer['id']} (store_id={customer.get('store_id')})")
 
 
 # ─── Orders ─────────────────────────────────────────────────────────────────
 
-def upsert_order(order: dict) -> None:
+def upsert_order(order: dict, cursor=None) -> None:
     sql = """
         INSERT INTO orders (store_id, id, customer_id, email, total_price, subtotal_price, total_discounts, financial_status, fulfillment_status, created_at, updated_at)
         VALUES (%(store_id)s, %(id)s, %(customer_id)s, %(email)s, %(total_price)s, %(subtotal_price)s, %(total_discounts)s, %(financial_status)s, %(fulfillment_status)s, %(created_at)s, %(updated_at)s)
@@ -217,27 +226,33 @@ def upsert_order(order: dict) -> None:
             updated_at = EXCLUDED.updated_at,
             synced_at = NOW();
     """
-    with get_cursor(commit=True) as cursor:
+    if cursor is not None:
         cursor.execute(sql, order)
+    else:
+        with get_cursor(commit=True) as _cursor:
+            _cursor.execute(sql, order)
     logger.debug(f"Upserted order {order['id']} (store_id={order.get('store_id')})")
 
 
 # ─── Order Items ─────────────────────────────────────────────────────────────
 
-def upsert_order_item(item: dict) -> None:
+def upsert_order_item(item: dict, cursor=None) -> None:
     sql = """
         INSERT INTO order_items (store_id, id, order_id, product_id, variant_id, title, quantity, price, total_discount, vendor)
         VALUES (%(store_id)s, %(id)s, %(order_id)s, %(product_id)s, %(variant_id)s, %(title)s, %(quantity)s, %(price)s, %(total_discount)s, %(vendor)s)
         ON CONFLICT (store_id, id) DO NOTHING;
     """
-    with get_cursor(commit=True) as cursor:
+    if cursor is not None:
         cursor.execute(sql, item)
+    else:
+        with get_cursor(commit=True) as _cursor:
+            _cursor.execute(sql, item)
     logger.debug(f"Upserted order item {item['id']} (store_id={item.get('store_id')})")
 
 
 # ─── Inventory ───────────────────────────────────────────────────────────────
 
-def upsert_inventory(inventory: dict) -> None:
+def upsert_inventory(inventory: dict, cursor=None) -> None:
     sql = """
         INSERT INTO inventory (store_id, variant_id, inventory_item_id, location_id, available)
         VALUES (%(store_id)s, %(variant_id)s, %(inventory_item_id)s, %(location_id)s, %(available)s)
@@ -245,6 +260,9 @@ def upsert_inventory(inventory: dict) -> None:
             available = EXCLUDED.available,
             synced_at = NOW();
     """
-    with get_cursor(commit=True) as cursor:
+    if cursor is not None:
         cursor.execute(sql, inventory)
+    else:
+        with get_cursor(commit=True) as _cursor:
+            _cursor.execute(sql, inventory)
     logger.debug(f"Upserted inventory for variant {inventory['variant_id']} (store_id={inventory.get('store_id')})")
