@@ -1,5 +1,8 @@
+from datetime import datetime, timedelta, timezone
+
 from config.logging_config import get_logger
 from config import settings
+from db.queries import update_store_auth_tokens
 from etl.extract import (
     fetch_products,
     fetch_customers,
@@ -24,13 +27,107 @@ from reporting.templates import get_email_subject
 from reporting.email_sender import send_email
 from reporting.pdf_report import create_report_pdf
 from utils.decorators import log_execution
+from utils.shopify_auth import (
+    fetch_access_scopes,
+    migrate_non_expiring_offline_token,
+    refresh_access_token,
+    validate_access_token,
+    validate_read_only_scopes,
+)
 
 logger = get_logger(__name__)
 
 
+def _ensure_store_access_token(
+    *,
+    shop_domain: str,
+    access_token: str,
+    refresh_token: str | None = None,
+    access_token_expires_at=None,
+) -> str:
+    """
+    Returns a usable access token, refreshing it when needed.
+    """
+    token = (access_token or "").strip()
+    if not token:
+        raise RuntimeError(f"Missing access token for {shop_domain}")
+
+    # Refresh proactively if token is near expiry.
+    should_refresh = False
+    if access_token_expires_at:
+        try:
+            if datetime.now(timezone.utc) + timedelta(minutes=2) >= access_token_expires_at:
+                should_refresh = True
+        except Exception:
+            logger.warning("Invalid access_token_expires_at for %s; continuing with current token", shop_domain)
+
+    if should_refresh:
+        if not (refresh_token or "").strip():
+            raise RuntimeError(f"Access token for {shop_domain} is expiring and no refresh token is stored.")
+        refreshed = refresh_access_token(shop_domain, refresh_token)
+        token = refreshed["access_token"]
+        update_store_auth_tokens(
+            shop_domain,
+            access_token=token,
+            refresh_token=refreshed.get("refresh_token"),
+            access_token_expires_at=refreshed.get("access_token_expires_at"),
+        )
+        logger.info("Refreshed access token for %s", shop_domain)
+        return token
+
+    token_ok, _ = validate_access_token(shop_domain, token)
+    if token_ok:
+        return token
+
+    # If current token is invalid and we have a refresh token, rotate and retry.
+    if (refresh_token or "").strip():
+        refreshed = refresh_access_token(shop_domain, refresh_token)
+        token = refreshed["access_token"]
+        update_store_auth_tokens(
+            shop_domain,
+            access_token=token,
+            refresh_token=refreshed.get("refresh_token"),
+            access_token_expires_at=refreshed.get("access_token_expires_at"),
+        )
+        logger.info("Rotated invalid access token for %s", shop_domain)
+        return token
+
+    # Last attempt: one-time Shopify migration from non-expiring -> expiring offline token.
+    migrated = migrate_non_expiring_offline_token(shop_domain, token)
+    token = migrated["access_token"]
+    update_store_auth_tokens(
+        shop_domain,
+        access_token=token,
+        refresh_token=migrated.get("refresh_token"),
+        access_token_expires_at=migrated.get("access_token_expires_at"),
+    )
+    logger.info("Migrated non-expiring offline token for %s", shop_domain)
+    return token
+
+
 @log_execution
-def run_etl_for_store(*, store_id: int, shop_domain: str, access_token: str) -> None:
+def run_etl_for_store(
+    *,
+    store_id: int,
+    shop_domain: str,
+    access_token: str,
+    refresh_token: str | None = None,
+    access_token_expires_at=None,
+) -> None:
     logger.info("Starting ETL pipeline...")
+    access_token = _ensure_store_access_token(
+        shop_domain=shop_domain,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        access_token_expires_at=access_token_expires_at,
+    )
+    token_ok, token_detail = validate_access_token(shop_domain, access_token)
+    if not token_ok:
+        raise RuntimeError(f"Token validation failed for {shop_domain}: {token_detail}")
+    scopes = fetch_access_scopes(shop_domain, access_token)
+    scopes_ok, scopes_detail = validate_read_only_scopes(scopes)
+    if not scopes_ok:
+        raise RuntimeError(f"Scope validation failed for {shop_domain}: {scopes_detail}")
 
     # Extract
     raw_products = fetch_products(shop_domain=shop_domain, access_token=access_token)
@@ -90,7 +187,13 @@ def run_pipeline() -> None:
     if not store:
         raise RuntimeError("No store row found for SHOPIFY_STORE_URL; connect the store via onboarding first.")
 
-    run_etl_for_store(store_id=store["id"], shop_domain=settings.SHOPIFY_STORE_URL, access_token=settings.SHOPIFY_ACCESS_TOKEN)
+    run_etl_for_store(
+        store_id=store["id"],
+        shop_domain=settings.SHOPIFY_STORE_URL,
+        access_token=store.get("access_token") or settings.SHOPIFY_ACCESS_TOKEN,
+        refresh_token=store.get("refresh_token"),
+        access_token_expires_at=store.get("access_token_expires_at"),
+    )
     recipient = (store.get("contact_email") or settings.EMAIL_RECIPIENT or "").strip()
     if not recipient:
         raise RuntimeError("No recipient email found for store.")

@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS stores (
     id BIGSERIAL PRIMARY KEY,
     shop_domain VARCHAR(255) UNIQUE NOT NULL,
     access_token TEXT,
+    refresh_token TEXT,
+    access_token_expires_at TIMESTAMPTZ,
     scope TEXT,
     contact_email VARCHAR(255),
     is_active BOOLEAN DEFAULT TRUE,
@@ -30,6 +32,12 @@ ALTER TABLE stores
 
 ALTER TABLE stores
     ADD COLUMN IF NOT EXISTS report_timezone VARCHAR(64);
+
+ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS refresh_token TEXT;
+
+ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS access_token_expires_at TIMESTAMPTZ;
 
 -- Products table
 CREATE TABLE IF NOT EXISTS products (
@@ -279,3 +287,18 @@ CREATE INDEX IF NOT EXISTS idx_customers_store_id ON customers(store_id);
 CREATE INDEX IF NOT EXISTS idx_orders_store_id ON orders(store_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_store_id ON order_items(store_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_store_id ON inventory(store_id);
+
+-- Job monitoring table (basic operational visibility)
+CREATE TABLE IF NOT EXISTS job_runs (
+    id BIGSERIAL PRIMARY KEY,
+    store_id BIGINT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    shop_domain VARCHAR(255) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+    email_sent BOOLEAN NOT NULL DEFAULT FALSE,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_runs_store_id_started_at ON job_runs(store_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_job_runs_status_started_at ON job_runs(status, started_at DESC);

@@ -56,12 +56,20 @@ def run_forever(poll_seconds: int = 20) -> None:
                 store = get_store_by_domain(shop_domain) or {}
                 store_id = store.get("id")
                 access_token = (store.get("access_token") or "").strip()
+                refresh_token = (store.get("refresh_token") or "").strip() or None
+                access_token_expires_at = store.get("access_token_expires_at")
                 if not store_id or not access_token:
                     logger.warning("Missing store_id/access_token for %s; skipping", shop_domain)
                     continue
 
                 logger.info("Sending scheduled report for %s to %s (%s %s)", shop_domain, to_addr, tz_name, hhmm)
-                run_etl_for_store(store_id=store_id, shop_domain=shop_domain, access_token=access_token)
+                run_etl_for_store(
+                    store_id=store_id,
+                    shop_domain=shop_domain,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    access_token_expires_at=access_token_expires_at,
+                )
                 run_reporting_for_store(store_id=store_id, recipient_email=to_addr)
 
         except Exception:

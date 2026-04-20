@@ -1,6 +1,7 @@
 ## Shopify Automation Pipeline
 
-This project pulls data from Shopify (products, customers, orders, inventory), loads it into a PostgreSQL database, computes analytics, and emails a daily store intelligence report as a PDF attachment. It also includes FastAPI-based Shopify OAuth onboarding so stores can connect in one click.
+This project pulls data from Shopify (products, customers, orders, inventory), loads it into a PostgreSQL database, computes analytics, and emails a daily store intelligence report as a PDF attachment.
+The current deployment model uses a private Shopify app install flow (OAuth) for selected clients. No public listing, client portal, or onboarding UI is required.
 
 ## What it does
 
@@ -9,7 +10,7 @@ This project pulls data from Shopify (products, customers, orders, inventory), l
 - Loads/upserts records into PostgreSQL
 - Builds an analytics summary (inventory alerts, customer insights, revenue summary, anomalies, and a short “action required” insights block)
 - Generates a PDF report and sends it by email (SMTP SSL)
-- Provides OAuth onboarding endpoints for connecting new Shopify stores
+- Supports private app OAuth onboarding (`install -> callback -> token storage`)
 
 **Inventory alert bands** (mutually exclusive, see `config/constants.py`): out of stock = 0; critical = 1 through `CRITICAL_STOCK_THRESHOLD`; low = one above critical through `LOW_STOCK_THRESHOLD`.
 
@@ -21,11 +22,12 @@ This project pulls data from Shopify (products, customers, orders, inventory), l
 - Shopify Admin API access:
   - `SHOPIFY_STORE_URL`
   - `SHOPIFY_ACCESS_TOKEN`
-- Shopify OAuth app settings (for onboarding API):
+- Optional (future use only) Shopify OAuth app settings:
   - `SHOPIFY_API_KEY`
   - `SHOPIFY_API_SECRET`
-  - `SHOPIFY_APP_BASE_URL` (for callback URL, e.g. `http://localhost:8000`)
-  - `SHOPIFY_SCOPES` (optional; defaults provided)
+  - `SHOPIFY_APP_BASE_URL`
+  - `SHOPIFY_SCOPES`
+  - `ENABLE_PUBLIC_ONBOARDING=false` keeps all public onboarding endpoints disabled
 - SMTP credentials for sending email:
   - `SMTP_HOST`, `SMTP_PORT`
   - `EMAIL_SENDER`, `EMAIL_PASSWORD`
@@ -77,18 +79,26 @@ python main.py --task report
 
 Tasks are implemented in `scheduler\\tasks.py` (ETL only, reporting only, or full pipeline).
 
-### Run OAuth onboarding API (FastAPI)
+### Private install onboarding (OAuth)
 
 ```bash
-uvicorn onboarding.app:app --host 0.0.0.0 --port 8000 --reload
+uvicorn onboarding.app:app --host 0.0.0.0 --port 8000
 ```
 
-Key routes:
+Send selected clients a direct install link:
 
-- `GET /` - simple "Connect your store" page
-- `GET /connect?shop=your-store.myshopify.com` - starts Shopify OAuth
-- `POST /connect` - form-based OAuth start
-- `GET /oauth/callback` - Shopify OAuth callback, token exchange, and store save
+```bash
+https://<YOUR_BASE_URL>/install?shop=your-store.myshopify.com&email=owner@yourstore.com
+```
+
+What onboarding validates:
+- OAuth callback HMAC + state signature
+- Token exchange using app credentials
+- Granted scopes are read-only and include:
+  - `read_products`
+  - `read_orders`
+  - `read_inventory`
+  - `read_customers`
 
 ### Run manual CSV service workflow (no OAuth)
 
@@ -108,6 +118,40 @@ Run:
 
 ```bash
 python scheduler\\run_manual_csv_reports.py --shop-domain client-a.myshopify.com --recipient-email owner@client.com --data-dir data\\manual_export
+```
+
+### Run one managed store job (internal trigger)
+
+```bash
+python scripts\run_store_job.py --shop-domain your-store.myshopify.com
+```
+
+Or use the same per-client env file:
+
+```bash
+python scripts\run_store_job.py --env-file "D:\client-envs\client-a.env"
+```
+
+This runs ETL + report delivery for a previously onboarded store using stored per-shop OAuth credentials.
+
+### Basic monitoring (job failures + email send status)
+
+Initialize monitoring schema once:
+
+```bash
+python scripts\init_monitoring.py
+```
+
+Check recent runs:
+
+```bash
+python scripts\job_status.py --limit 20
+```
+
+Show only failures:
+
+```bash
+python scripts\job_status.py --only-failed
 ```
 
 ## Logs

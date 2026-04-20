@@ -9,14 +9,28 @@ logger = get_logger(__name__)
 def upsert_store_connection(
     shop_domain: str,
     access_token: str,
+    refresh_token: str | None = None,
+    access_token_expires_at=None,
     scope: str | None = None,
     contact_email: str | None = None,
 ) -> None:
     sql = """
-        INSERT INTO stores (shop_domain, access_token, scope, contact_email, is_active, connected_at, updated_at)
-        VALUES (%s, %s, %s, %s, TRUE, NOW(), NOW())
+        INSERT INTO stores (
+            shop_domain,
+            access_token,
+            refresh_token,
+            access_token_expires_at,
+            scope,
+            contact_email,
+            is_active,
+            connected_at,
+            updated_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
         ON CONFLICT (shop_domain) DO UPDATE SET
             access_token = EXCLUDED.access_token,
+            refresh_token = COALESCE(EXCLUDED.refresh_token, stores.refresh_token),
+            access_token_expires_at = COALESCE(EXCLUDED.access_token_expires_at, stores.access_token_expires_at),
             scope = EXCLUDED.scope,
             contact_email = COALESCE(EXCLUDED.contact_email, stores.contact_email),
             is_active = TRUE,
@@ -24,7 +38,17 @@ def upsert_store_connection(
             updated_at = NOW();
     """
     with get_cursor(commit=True) as cursor:
-        cursor.execute(sql, (shop_domain, access_token, scope, contact_email))
+        cursor.execute(
+            sql,
+            (
+                shop_domain,
+                access_token,
+                refresh_token,
+                access_token_expires_at,
+                scope,
+                contact_email,
+            ),
+        )
     logger.info(f"Connected store saved: {shop_domain}")
 
 
@@ -49,6 +73,8 @@ def get_store_by_domain(shop_domain: str) -> dict | None:
         SELECT id,
                shop_domain,
                access_token,
+               refresh_token,
+               access_token_expires_at,
                scope,
                contact_email,
                is_active,
@@ -65,6 +91,26 @@ def get_store_by_domain(shop_domain: str) -> dict | None:
         cursor.execute(sql, (shop_domain,))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+
+def update_store_auth_tokens(
+    shop_domain: str,
+    *,
+    access_token: str,
+    refresh_token: str | None = None,
+    access_token_expires_at=None,
+) -> None:
+    sql = """
+        UPDATE stores
+        SET access_token = %s,
+            refresh_token = COALESCE(%s, refresh_token),
+            access_token_expires_at = COALESCE(%s, access_token_expires_at),
+            updated_at = NOW()
+        WHERE shop_domain = %s;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (access_token, refresh_token, access_token_expires_at, shop_domain))
+    logger.info(f"Updated auth tokens for store: {shop_domain}")
 
 
 def claim_report_send_slot(shop_domain: str) -> bool:
@@ -266,3 +312,52 @@ def upsert_inventory(inventory: dict, cursor=None) -> None:
         with get_cursor(commit=True) as _cursor:
             _cursor.execute(sql, inventory)
     logger.debug(f"Upserted inventory for variant {inventory['variant_id']} (store_id={inventory.get('store_id')})")
+
+
+# ─── Job Monitoring ──────────────────────────────────────────────────────────
+
+def create_job_run(store_id: int, shop_domain: str) -> int:
+    sql = """
+        INSERT INTO job_runs (store_id, shop_domain, status, started_at)
+        VALUES (%s, %s, 'running', NOW())
+        RETURNING id;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (store_id, shop_domain))
+        row = cursor.fetchone()
+        if not row:
+            raise RuntimeError("Failed to create job run row.")
+        return int(row["id"])
+
+
+def complete_job_run(job_run_id: int, *, status: str, email_sent: bool, error_message: str | None = None) -> None:
+    sql = """
+        UPDATE job_runs
+        SET status = %s,
+            email_sent = %s,
+            error_message = %s,
+            finished_at = NOW()
+        WHERE id = %s;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (status, email_sent, error_message, job_run_id))
+
+
+def get_recent_job_runs(limit: int = 20) -> list[dict]:
+    sql = """
+        SELECT id,
+               store_id,
+               shop_domain,
+               status,
+               started_at,
+               finished_at,
+               email_sent,
+               error_message
+        FROM job_runs
+        ORDER BY started_at DESC
+        LIMIT %s;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (limit,))
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
