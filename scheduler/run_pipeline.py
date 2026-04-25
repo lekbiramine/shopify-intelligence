@@ -125,9 +125,16 @@ def run_etl_for_store(
     if not token_ok:
         raise RuntimeError(f"Token validation failed for {shop_domain}: {token_detail}")
     scopes = fetch_access_scopes(shop_domain, access_token)
+    logger.info("Granted scopes for %s: %s", shop_domain, ",".join(scopes))
     scopes_ok, scopes_detail = validate_read_only_scopes(scopes)
     if not scopes_ok:
         raise RuntimeError(f"Scope validation failed for {shop_domain}: {scopes_detail}")
+    logger.info(
+        "Scope check passed for %s (read_customers=%s, read_orders=%s)",
+        shop_domain,
+        "read_customers" in set(scopes),
+        "read_orders" in set(scopes),
+    )
 
     # Extract
     raw_products = fetch_products(shop_domain=shop_domain, access_token=access_token)
@@ -169,6 +176,45 @@ def run_reporting_for_store(*, store_id: int, recipient_email: str) -> None:
     send_email(subject, email_body, attachment_path=pdf_path, recipient=recipient_email)
 
     logger.info("Reporting pipeline completed.")
+
+
+@log_execution
+def run_etl() -> None:
+    """
+    Backwards compatible single-store ETL task driven by env vars.
+    """
+    settings.validate_shopify_pipeline_env()
+    from db.queries import get_store_by_domain
+
+    store = get_store_by_domain(settings.SHOPIFY_STORE_URL)
+    if not store:
+        raise RuntimeError("No store row found for SHOPIFY_STORE_URL; connect the store via onboarding first.")
+
+    run_etl_for_store(
+        store_id=store["id"],
+        shop_domain=settings.SHOPIFY_STORE_URL,
+        access_token=store.get("access_token") or settings.SHOPIFY_ACCESS_TOKEN,
+        refresh_token=store.get("refresh_token"),
+        access_token_expires_at=store.get("access_token_expires_at"),
+    )
+
+
+@log_execution
+def run_reporting() -> None:
+    """
+    Backwards compatible single-store reporting task driven by env vars.
+    """
+    settings.validate_email_env()
+    from db.queries import get_store_by_domain
+
+    store = get_store_by_domain(settings.SHOPIFY_STORE_URL)
+    if not store:
+        raise RuntimeError("No store row found for SHOPIFY_STORE_URL; connect the store via onboarding first.")
+
+    recipient = (store.get("contact_email") or settings.EMAIL_RECIPIENT or "").strip()
+    if not recipient:
+        raise RuntimeError("No recipient email found for store.")
+    run_reporting_for_store(store_id=store["id"], recipient_email=recipient)
 
 
 @log_execution

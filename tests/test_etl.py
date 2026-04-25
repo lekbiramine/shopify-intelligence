@@ -1,4 +1,5 @@
 from unittest.mock import patch
+import requests
 from etl.extract import fetch_products, fetch_customers, fetch_orders
 from etl.transform import (
     transform_products,
@@ -12,21 +13,53 @@ from etl.transform import (
 
 def test_fetch_products_returns_list():
     with patch("etl.extract.paginated_get", return_value=[{"id": 1, "title": "Test"}]):
-        result = fetch_products()
+        result = fetch_products(shop_domain="test-shop.myshopify.com", access_token="token")
         assert isinstance(result, list)
         assert len(result) == 1
 
 
 def test_fetch_customers_returns_list():
     with patch("etl.extract.paginated_get", return_value=[{"id": 1, "email": "a@b.com"}]):
-        result = fetch_customers()
+        result = fetch_customers(shop_domain="test-shop.myshopify.com", access_token="token")
         assert isinstance(result, list)
 
 
 def test_fetch_orders_returns_list():
     with patch("etl.extract.paginated_get", return_value=[{"id": 1, "total_price": "99.99"}]):
-        result = fetch_orders()
+        result = fetch_orders(shop_domain="test-shop.myshopify.com", access_token="token")
         assert isinstance(result, list)
+
+
+def test_fetch_customers_falls_back_to_graphql_on_403():
+    http_error = requests.HTTPError(response=type("Resp", (), {"status_code": 403})())
+    with patch("etl.extract.paginated_get", side_effect=http_error), patch(
+        "etl.extract._fetch_customers_graphql",
+        return_value=[{"id": 1, "email": "a@b.com"}],
+    ):
+        result = fetch_customers(shop_domain="test-shop.myshopify.com", access_token="token")
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+
+def test_fetch_orders_falls_back_to_graphql_on_403():
+    http_error = requests.HTTPError(response=type("Resp", (), {"status_code": 403})())
+    with patch("etl.extract.paginated_get", side_effect=http_error), patch(
+        "etl.extract._fetch_orders_graphql",
+        return_value=[{"id": 1, "total_price": "99.99"}],
+    ):
+        result = fetch_orders(shop_domain="test-shop.myshopify.com", access_token="token")
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+
+def test_fetch_customers_returns_empty_when_graphql_fallback_fails():
+    http_error = requests.HTTPError(response=type("Resp", (), {"status_code": 403})())
+    with patch("etl.extract.paginated_get", side_effect=http_error), patch(
+        "etl.extract._fetch_customers_graphql",
+        side_effect=RuntimeError("ACCESS_DENIED"),
+    ):
+        result = fetch_customers(shop_domain="test-shop.myshopify.com", access_token="token")
+        assert result == []
 
 
 # ─── Transform Tests ─────────────────────────────────────────────────────────

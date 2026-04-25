@@ -1,5 +1,6 @@
 from etl.utils import paginated_get
 from config.logging_config import get_logger
+from config import constants
 import requests
 
 logger = get_logger(__name__)
@@ -19,33 +20,45 @@ def fetch_products(*, shop_domain: str, access_token: str) -> list:
 def fetch_customers(*, shop_domain: str, access_token: str) -> list:
     logger.info("Fetching customers from Shopify...")
     try:
-        return paginated_get(
+        customers = paginated_get(
             endpoint="customers.json",
             key="customers",
             shop_domain=shop_domain,
             access_token=access_token,
         )
+        logger.info("Customers fetched via REST for %s: %s", shop_domain, len(customers))
+        return customers
     except requests.HTTPError as exc:
         status_code = getattr(exc.response, "status_code", None)
         if status_code == 403:
             logger.warning(
-                "Customers API denied for %s (HTTP 403). Continuing without customer records.",
+                "Customers REST API denied for %s (HTTP 403). Falling back to GraphQL customers query.",
                 shop_domain,
             )
-            return []
+            try:
+                return _fetch_customers_graphql(shop_domain=shop_domain, access_token=access_token)
+            except Exception as fallback_exc:
+                logger.warning(
+                    "Customers GraphQL fallback failed for %s: %s. Returning empty customer dataset.",
+                    shop_domain,
+                    fallback_exc,
+                )
+                return []
         raise
 
 
 def fetch_orders(*, shop_domain: str, access_token: str) -> list:
     logger.info("Fetching orders from Shopify...")
     try:
-        return paginated_get(
+        orders = paginated_get(
             endpoint="orders.json",
             key="orders",
             params={"status": "any"},
             shop_domain=shop_domain,
             access_token=access_token,
         )
+        logger.info("Orders fetched via REST for %s: %s", shop_domain, len(orders))
+        return orders
     except requests.HTTPError as exc:
         status_code = getattr(exc.response, "status_code", None)
         if status_code == 403:
@@ -53,7 +66,15 @@ def fetch_orders(*, shop_domain: str, access_token: str) -> list:
                 "Orders REST API denied for %s (HTTP 403). Falling back to GraphQL orders query.",
                 shop_domain,
             )
-            return _fetch_orders_graphql(shop_domain=shop_domain, access_token=access_token)
+            try:
+                return _fetch_orders_graphql(shop_domain=shop_domain, access_token=access_token)
+            except Exception as fallback_exc:
+                logger.warning(
+                    "Orders GraphQL fallback failed for %s: %s. Returning empty orders dataset.",
+                    shop_domain,
+                    fallback_exc,
+                )
+                return []
         raise
 
 
@@ -98,7 +119,7 @@ def _fetch_orders_graphql(*, shop_domain: str, access_token: str) -> list[dict]:
     REST orders/customers can be blocked by protected customer data restrictions.
     This GraphQL fallback only requests non-protected order fields.
     """
-    url = f"https://{shop_domain}/admin/api/2026-04/graphql.json"
+    url = f"https://{shop_domain}/admin/api/{constants.SHOPIFY_API_VERSION}/graphql.json"
     headers = {
         "X-Shopify-Access-Token": access_token,
         "Content-Type": "application/json",
@@ -142,16 +163,14 @@ def _fetch_orders_graphql(*, shop_domain: str, access_token: str) -> list[dict]:
     results: list[dict] = []
     cursor = None
     while True:
-        response = requests.post(
-            url,
+        payload = _post_graphql(
+            url=url,
             headers=headers,
-            json={"query": query, "variables": {"cursor": cursor}},
-            timeout=30,
+            query=query,
+            variables={"cursor": cursor},
+            operation_name="orders",
+            shop_domain=shop_domain,
         )
-        response.raise_for_status()
-        payload = response.json() or {}
-        if payload.get("errors"):
-            raise RuntimeError(f"Shopify GraphQL orders query failed: {payload['errors']}")
         orders_block = (((payload.get("data") or {}).get("orders")) or {})
         edges = orders_block.get("edges") or []
         for edge in edges:
@@ -199,5 +218,108 @@ def _fetch_orders_graphql(*, shop_domain: str, access_token: str) -> list[dict]:
             break
         cursor = page_info.get("endCursor")
 
-    logger.info("Fetched %s orders via GraphQL fallback.", len(results))
+    logger.info("Orders fetched via GraphQL fallback for %s: %s", shop_domain, len(results))
     return [order for order in results if order.get("id")]
+
+
+def _fetch_customers_graphql(*, shop_domain: str, access_token: str) -> list[dict]:
+    """
+    GraphQL fallback when customers REST endpoint is denied.
+    """
+    url = f"https://{shop_domain}/admin/api/{constants.SHOPIFY_API_VERSION}/graphql.json"
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    query = """
+    query CustomersPage($cursor: String) {
+      customers(first: 100, after: $cursor, sortKey: CREATED_AT, reverse: true) {
+        pageInfo { hasNextPage endCursor }
+        edges {
+          node {
+            id
+            legacyResourceId
+            email
+            firstName
+            lastName
+            numberOfOrders
+            amountSpent { amount }
+            createdAt
+            updatedAt
+          }
+        }
+      }
+    }
+    """
+    results: list[dict] = []
+    cursor = None
+    while True:
+        payload = _post_graphql(
+            url=url,
+            headers=headers,
+            query=query,
+            variables={"cursor": cursor},
+            operation_name="customers",
+            shop_domain=shop_domain,
+        )
+        customers_block = (((payload.get("data") or {}).get("customers")) or {})
+        edges = customers_block.get("edges") or []
+        for edge in edges:
+            node = (edge or {}).get("node") or {}
+            customer_id = node.get("legacyResourceId") or _parse_gid_int(node.get("id"))
+            if not customer_id:
+                continue
+            amount_spent = ((node.get("amountSpent") or {}).get("amount")) or 0
+            results.append(
+                {
+                    "id": customer_id,
+                    "email": node.get("email"),
+                    "first_name": node.get("firstName"),
+                    "last_name": node.get("lastName"),
+                    "orders_count": int(node.get("numberOfOrders") or 0),
+                    "total_spent": float(amount_spent),
+                    "created_at": node.get("createdAt"),
+                    "updated_at": node.get("updatedAt"),
+                }
+            )
+        page_info = customers_block.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor")
+    logger.info("Customers fetched via GraphQL fallback for %s: %s", shop_domain, len(results))
+    return results
+
+
+def _post_graphql(
+    *,
+    url: str,
+    headers: dict,
+    query: str,
+    variables: dict,
+    operation_name: str,
+    shop_domain: str,
+) -> dict:
+    response = requests.post(
+        url,
+        headers=headers,
+        json={"query": query, "variables": variables},
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json() or {}
+    errors = payload.get("errors") or []
+    if errors:
+        logger.warning(
+            "Shopify GraphQL %s query returned errors for %s: %s",
+            operation_name,
+            shop_domain,
+            errors,
+        )
+        # ACCESS_DENIED usually indicates Protected Customer Data access is not approved.
+        if any("ACCESS_DENIED" in str(err) for err in errors):
+            raise RuntimeError(
+                f"GraphQL {operation_name} ACCESS_DENIED for {shop_domain}. "
+                "Check Shopify Protected Customer Data approval in Partner Dashboard."
+            )
+        raise RuntimeError(f"Shopify GraphQL {operation_name} query failed: {errors}")
+    return payload

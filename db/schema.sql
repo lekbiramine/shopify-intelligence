@@ -39,6 +39,48 @@ ALTER TABLE stores
 ALTER TABLE stores
     ADD COLUMN IF NOT EXISTS access_token_expires_at TIMESTAMPTZ;
 
+ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS referral_code_used VARCHAR(64);
+
+ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS referral_code_id BIGINT;
+
+-- Affiliate/referral codes managed by internal team
+CREATE TABLE IF NOT EXISTS referral_codes (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(64) UNIQUE NOT NULL,
+    partner_name VARCHAR(255) NOT NULL,
+    discount_percent NUMERIC(5, 2) NOT NULL DEFAULT 20.00,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE stores
+    DROP CONSTRAINT IF EXISTS stores_referral_code_id_fkey;
+
+ALTER TABLE stores
+    ADD CONSTRAINT stores_referral_code_id_fkey
+    FOREIGN KEY (referral_code_id) REFERENCES referral_codes(id) ON DELETE SET NULL;
+
+-- Attribution history linking installs to referral codes
+CREATE TABLE IF NOT EXISTS store_referrals (
+    id BIGSERIAL PRIMARY KEY,
+    store_id BIGINT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    referral_code_id BIGINT NOT NULL REFERENCES referral_codes(id) ON DELETE RESTRICT,
+    installed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source VARCHAR(32) NOT NULL DEFAULT 'oauth_install',
+    UNIQUE (store_id)
+);
+
+-- One-time OAuth state tracking to prevent callback replay
+CREATE TABLE IF NOT EXISTS oauth_states (
+    state_hash CHAR(64) PRIMARY KEY,
+    shop_domain VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ
+);
+
 -- Products table
 CREATE TABLE IF NOT EXISTS products (
     store_id BIGINT REFERENCES stores(id) ON DELETE CASCADE,
@@ -65,9 +107,13 @@ ALTER TABLE products
 -- Drop legacy FKs that depended on products(id) PK, before replacing PK
 ALTER TABLE variants
     DROP CONSTRAINT IF EXISTS variants_product_id_fkey;
+ALTER TABLE variants
+    DROP CONSTRAINT IF EXISTS variants_product_fk;
 
 ALTER TABLE order_items
     DROP CONSTRAINT IF EXISTS order_items_product_id_fkey;
+ALTER TABLE order_items
+    DROP CONSTRAINT IF EXISTS order_items_product_fk;
 
 ALTER TABLE products
     DROP CONSTRAINT IF EXISTS products_pkey;
@@ -101,9 +147,13 @@ ALTER TABLE variants
 -- Drop legacy FKs that depended on variants(id) PK, before replacing PK
 ALTER TABLE order_items
     DROP CONSTRAINT IF EXISTS order_items_variant_id_fkey;
+ALTER TABLE order_items
+    DROP CONSTRAINT IF EXISTS order_items_variant_fk;
 
 ALTER TABLE inventory
     DROP CONSTRAINT IF EXISTS inventory_variant_id_fkey;
+ALTER TABLE inventory
+    DROP CONSTRAINT IF EXISTS inventory_variant_fk;
 
 ALTER TABLE variants
     DROP CONSTRAINT IF EXISTS variants_pkey;
@@ -142,6 +192,8 @@ ALTER TABLE customers
 -- Drop legacy FK that depended on customers(id) PK, before replacing PK
 ALTER TABLE orders
     DROP CONSTRAINT IF EXISTS orders_customer_id_fkey;
+ALTER TABLE orders
+    DROP CONSTRAINT IF EXISTS orders_customer_fk;
 
 ALTER TABLE customers
     DROP CONSTRAINT IF EXISTS customers_pkey;
@@ -178,6 +230,8 @@ ALTER TABLE orders
 -- Drop legacy FK that depended on orders(id) PK, before replacing PK
 ALTER TABLE order_items
     DROP CONSTRAINT IF EXISTS order_items_order_id_fkey;
+ALTER TABLE order_items
+    DROP CONSTRAINT IF EXISTS order_items_order_fk;
 
 ALTER TABLE orders
     DROP CONSTRAINT IF EXISTS orders_pkey;
@@ -287,6 +341,10 @@ CREATE INDEX IF NOT EXISTS idx_customers_store_id ON customers(store_id);
 CREATE INDEX IF NOT EXISTS idx_orders_store_id ON orders(store_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_store_id ON order_items(store_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_store_id ON inventory(store_id);
+CREATE INDEX IF NOT EXISTS idx_referral_codes_active ON referral_codes(is_active);
+CREATE INDEX IF NOT EXISTS idx_referral_codes_partner ON referral_codes(partner_name);
+CREATE INDEX IF NOT EXISTS idx_store_referrals_referral_code_id ON store_referrals(referral_code_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states(expires_at);
 
 -- Job monitoring table (basic operational visibility)
 CREATE TABLE IF NOT EXISTS job_runs (

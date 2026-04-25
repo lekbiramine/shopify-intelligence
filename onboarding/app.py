@@ -12,7 +12,16 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from config.logging_config import get_logger
-from db.queries import upsert_store_connection, upsert_store_contact_email
+from db.queries import (
+    attach_store_referral,
+    consume_oauth_state,
+    create_oauth_state,
+    get_active_referral_code_by_code,
+    get_store_by_domain,
+    set_store_referral_code,
+    upsert_store_connection,
+    upsert_store_contact_email,
+)
 from utils.shopify_auth import (
     fetch_access_scopes,
     normalize_shop_domain,
@@ -58,6 +67,10 @@ def _build_state(shop_domain: str) -> str:
     return f"{payload}|{signature}"
 
 
+def _state_hash(state: str) -> str:
+    return hashlib.sha256((state or "").encode("utf-8")).hexdigest()
+
+
 def _validate_state(state: str, expected_shop: str) -> bool:
     parts = (state or "").split("|")
     if len(parts) != 4:
@@ -74,9 +87,16 @@ def _validate_state(state: str, expected_shop: str) -> bool:
     if not hmac.compare_digest(signature, expected_sig):
         return False
     try:
-        return int(time.time()) - int(issued_at) <= 600
+        if int(time.time()) - int(issued_at) > 600:
+            return False
     except ValueError:
         return False
+    return consume_oauth_state(_state_hash(state), expected_shop)
+
+
+def _normalize_referral_code(ref: str | None) -> str | None:
+    value = (ref or "").strip().upper()
+    return value or None
 
 
 def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
@@ -108,14 +128,23 @@ def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
 def install(
     shop: str = Query(..., description="Store domain"),
     email: str | None = Query(default=None, description="Optional report recipient"),
+    ref: str | None = Query(default=None, description="Optional referral code"),
 ) -> RedirectResponse:
     _ensure_oauth_env()
-    shop_domain = normalize_shop_domain(shop)
+    try:
+        shop_domain = normalize_shop_domain(shop)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     recipient = (email or "").strip()
+    referral_code = _normalize_referral_code(ref)
     if recipient:
         upsert_store_contact_email(shop_domain, recipient)
+    if referral_code:
+        # Store pending referral code before OAuth callback.
+        set_store_referral_code(shop_domain, referral_code)
 
     state = _build_state(shop_domain)
+    create_oauth_state(_state_hash(state), shop_domain, ttl_seconds=600)
     redirect_uri = f"{SHOPIFY_APP_BASE_URL.rstrip('/')}/oauth/callback"
     query = urlencode(
         {
@@ -207,6 +236,21 @@ def oauth_callback(
         if not scopes_ok:
             return PlainTextResponse(f"Scope validation failed: {scopes_detail}", status_code=400)
 
+        existing_referral_code = None
+        try:
+            existing_store = get_store_by_domain(shop_domain)
+            existing_referral_code = _normalize_referral_code((existing_store or {}).get("referral_code_used"))
+        except Exception:
+            logger.warning("Could not read pending referral code for %s", shop_domain)
+
+        referral_code_id = None
+        referral_code_used = None
+        if existing_referral_code:
+            referral = get_active_referral_code_by_code(existing_referral_code)
+            if referral:
+                referral_code_id = int(referral["id"])
+                referral_code_used = referral["code"]
+
         upsert_store_connection(
             shop_domain=shop_domain,
             access_token=access_token,
@@ -214,10 +258,25 @@ def oauth_callback(
             access_token_expires_at=access_token_expires_at,
             scope=",".join(scopes),
             contact_email=None,
+            referral_code_used=referral_code_used,
+            referral_code_id=referral_code_id,
         )
+
+        if referral_code_id and referral_code_used:
+            attach_store_referral(shop_domain, referral_code_id, referral_code_used)
+
         logger.info("Private app install completed for %s", shop_domain)
         return RedirectResponse(url=f"https://{shop_domain}/admin/apps", status_code=302)
 
-    except Exception as exc:
+    except ValueError as exc:
+        return PlainTextResponse(str(exc), status_code=400)
+    except HTTPException as exc:
+        return PlainTextResponse(str(exc.detail), status_code=exc.status_code)
+    except Exception:
         logger.exception("OAuth callback failed")
-        return PlainTextResponse(f"Callback error: {exc}", status_code=500)
+        return PlainTextResponse("Internal server error.", status_code=500)
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}

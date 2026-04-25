@@ -61,7 +61,47 @@ def _styles() -> dict[str, ParagraphStyle]:
 def _safe(value: object) -> str:
     if value is None:
         return "N/A"
-    return str(value)
+    return " ".join(str(value).split())
+
+
+def _format_anomaly_row(title: str, row: dict) -> str:
+    if title == "Duplicate Orders":
+        return (
+            f"Customer {_safe(row.get('customer_id'))} | "
+            f"Date: {_safe(row.get('order_date'))} | "
+            f"Amount: {format_currency(row.get('total_price', 0))} | "
+            f"Count: {_safe(row.get('order_count'))}"
+        )
+    if title == "Zero Value Orders":
+        return (
+            f"Order {_safe(row.get('order_id'))} | "
+            f"{_safe(row.get('email'))} | "
+            f"Amount: {format_currency(row.get('total_price', 0))}"
+        )
+    if title == "Abnormal Discounts":
+        return (
+            f"Order {_safe(row.get('order_id'))} | "
+            f"{_safe(row.get('email'))} | "
+            f"Discount: {_safe(row.get('discount_pct'))}%"
+        )
+    if title == "Active Products With No Sales":
+        return f"{_safe(row.get('product_title'))} | Vendor: {_safe(row.get('vendor'))}"
+    return " | ".join(
+        f"{k}: {_safe(v)}"
+        for k, v in row.items()
+        if k
+        in {
+            "order_id",
+            "customer_id",
+            "email",
+            "product_title",
+            "vendor",
+            "discount_pct",
+            "order_count",
+            "total_price",
+            "order_date",
+        }
+    )
 
 
 def _badge(severity: str) -> str:
@@ -221,7 +261,7 @@ def create_report_pdf(summary: dict, output_dir: str = "reports") -> str:
         story.append(Paragraph(f"<b>{title}</b> ({len(items)})", style["body"]))
         if items:
             for row in items[:20]:
-                line = " | ".join(f"{k}: {_safe(v)}" for k, v in row.items() if k in {"order_id", "customer_id", "email", "product_title", "vendor", "discount_pct", "order_count", "total_price"})
+                line = _format_anomaly_row(title, row)
                 story.append(Paragraph(f"- {line}", style["small"]))
             if len(items) > 20:
                 story.append(Paragraph(f"... and {len(items) - 20} more", style["small"]))

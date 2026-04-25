@@ -88,7 +88,7 @@ uvicorn onboarding.app:app --host 0.0.0.0 --port 8000
 Send selected clients a direct install link:
 
 ```bash
-https://<YOUR_BASE_URL>/install?shop=your-store.myshopify.com&email=owner@yourstore.com
+https://<YOUR_BASE_URL>/install?shop=your-store.myshopify.com&email=owner@yourstore.com&ref=CREATORCODE
 ```
 
 What onboarding validates:
@@ -99,6 +99,50 @@ What onboarding validates:
   - `read_orders`
   - `read_inventory`
   - `read_customers`
+
+Notes on Shopify customer/order access:
+- Even with `read_customers` and `read_orders`, Shopify can still block access with `403` / `ACCESS_DENIED` if your app is not approved for Protected Customer Data in the Partner Dashboard.
+- ETL now tries REST first, then automatically falls back to GraphQL for both customers and orders when REST is denied.
+- Run diagnostics:
+  ```bash
+  python scripts\diagnose_shopify_access.py --shop-domain your-store.myshopify.com
+  ```
+  This prints token validity, stored/live scopes, REST endpoint status, and GraphQL error details.
+
+If `ref` is provided in the install URL, the system stores that code during install and links it to the store after OAuth completes.
+
+### Referral code CLI (creator/affiliate tracking)
+
+Create a code:
+
+```bash
+python scripts\referrals.py create --partner "Creator Name"
+python scripts\referrals.py create --partner "Creator Name" --code CREATOR20 --discount 20
+```
+
+List codes with stats:
+
+```bash
+python scripts\referrals.py list
+```
+
+Show one code with linked stores:
+
+```bash
+python scripts\referrals.py show --code CREATOR20
+```
+
+Deactivate a code:
+
+```bash
+python scripts\referrals.py deactivate --code CREATOR20
+```
+
+Preview discount math:
+
+```bash
+python scripts\referrals.py discount --amount 100 --percent 20
+```
 
 ### Run manual CSV service workflow (no OAuth)
 

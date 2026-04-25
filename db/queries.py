@@ -13,6 +13,8 @@ def upsert_store_connection(
     access_token_expires_at=None,
     scope: str | None = None,
     contact_email: str | None = None,
+    referral_code_used: str | None = None,
+    referral_code_id: int | None = None,
 ) -> None:
     sql = """
         INSERT INTO stores (
@@ -22,17 +24,21 @@ def upsert_store_connection(
             access_token_expires_at,
             scope,
             contact_email,
+            referral_code_used,
+            referral_code_id,
             is_active,
             connected_at,
             updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
         ON CONFLICT (shop_domain) DO UPDATE SET
             access_token = EXCLUDED.access_token,
             refresh_token = COALESCE(EXCLUDED.refresh_token, stores.refresh_token),
             access_token_expires_at = COALESCE(EXCLUDED.access_token_expires_at, stores.access_token_expires_at),
             scope = EXCLUDED.scope,
             contact_email = COALESCE(EXCLUDED.contact_email, stores.contact_email),
+            referral_code_used = COALESCE(EXCLUDED.referral_code_used, stores.referral_code_used),
+            referral_code_id = COALESCE(EXCLUDED.referral_code_id, stores.referral_code_id),
             is_active = TRUE,
             connected_at = NOW(),
             updated_at = NOW();
@@ -47,6 +53,8 @@ def upsert_store_connection(
                 access_token_expires_at,
                 scope,
                 contact_email,
+                referral_code_used,
+                referral_code_id,
             ),
         )
     logger.info(f"Connected store saved: {shop_domain}")
@@ -77,6 +85,8 @@ def get_store_by_domain(shop_domain: str) -> dict | None:
                access_token_expires_at,
                scope,
                contact_email,
+               referral_code_used,
+               referral_code_id,
                is_active,
                last_report_sent_at,
                report_schedule_time,
@@ -91,6 +101,163 @@ def get_store_by_domain(shop_domain: str) -> dict | None:
         cursor.execute(sql, (shop_domain,))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+
+def set_store_referral_code(shop_domain: str, referral_code: str | None) -> None:
+    sql = """
+        INSERT INTO stores (shop_domain, referral_code_used, is_active, updated_at)
+        VALUES (%s, %s, TRUE, NOW())
+        ON CONFLICT (shop_domain) DO UPDATE SET
+            referral_code_used = EXCLUDED.referral_code_used,
+            updated_at = NOW();
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (shop_domain, referral_code))
+
+
+def create_referral_code(
+    code: str,
+    partner_name: str,
+    discount_percent: float = 20.0,
+) -> dict:
+    sql = """
+        INSERT INTO referral_codes (code, partner_name, discount_percent, is_active, created_at, updated_at)
+        VALUES (%s, %s, %s, TRUE, NOW(), NOW())
+        RETURNING id, code, partner_name, discount_percent, is_active, created_at;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (code, partner_name, discount_percent))
+        row = cursor.fetchone()
+        return dict(row)
+
+
+def deactivate_referral_code(code: str) -> bool:
+    sql = """
+        UPDATE referral_codes
+        SET is_active = FALSE,
+            updated_at = NOW()
+        WHERE code = %s
+        RETURNING id;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (code,))
+        row = cursor.fetchone()
+        return bool(row)
+
+
+def get_active_referral_code_by_code(code: str) -> dict | None:
+    sql = """
+        SELECT id, code, partner_name, discount_percent, is_active, created_at
+        FROM referral_codes
+        WHERE code = %s AND is_active = TRUE
+        LIMIT 1;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (code,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def attach_store_referral(shop_domain: str, referral_code_id: int, referral_code: str) -> bool:
+    sql = """
+        WITH updated_store AS (
+            UPDATE stores
+            SET referral_code_id = %s,
+                referral_code_used = %s,
+                updated_at = NOW()
+            WHERE shop_domain = %s
+            RETURNING id
+        )
+        INSERT INTO store_referrals (store_id, referral_code_id, installed_at, source)
+        SELECT id, %s, NOW(), 'oauth_install'
+        FROM updated_store
+        ON CONFLICT (store_id) DO UPDATE SET
+            referral_code_id = EXCLUDED.referral_code_id,
+            installed_at = EXCLUDED.installed_at,
+            source = EXCLUDED.source
+        RETURNING store_id;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (referral_code_id, referral_code, shop_domain, referral_code_id))
+        row = cursor.fetchone()
+        return bool(row)
+
+
+def list_referral_codes_with_stats() -> list[dict]:
+    sql = """
+        SELECT rc.id,
+               rc.code,
+               rc.partner_name,
+               rc.discount_percent,
+               rc.is_active,
+               rc.created_at,
+               COUNT(sr.id) AS store_count
+        FROM referral_codes rc
+        LEFT JOIN store_referrals sr ON sr.referral_code_id = rc.id
+        GROUP BY rc.id, rc.code, rc.partner_name, rc.discount_percent, rc.is_active, rc.created_at
+        ORDER BY rc.created_at DESC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql)
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
+
+
+def get_referral_code_details(code: str) -> dict | None:
+    details_sql = """
+        SELECT id, code, partner_name, discount_percent, is_active, created_at, updated_at
+        FROM referral_codes
+        WHERE code = %s
+        LIMIT 1;
+    """
+    stores_sql = """
+        SELECT s.shop_domain, sr.installed_at
+        FROM store_referrals sr
+        JOIN stores s ON s.id = sr.store_id
+        JOIN referral_codes rc ON rc.id = sr.referral_code_id
+        WHERE rc.code = %s
+        ORDER BY sr.installed_at DESC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(details_sql, (code,))
+        details = cursor.fetchone()
+        if not details:
+            return None
+        cursor.execute(stores_sql, (code,))
+        stores = cursor.fetchall() or []
+        payload = dict(details)
+        payload["stores"] = [dict(s) for s in stores]
+        payload["store_count"] = len(payload["stores"])
+        return payload
+
+
+def create_oauth_state(state_hash: str, shop_domain: str, ttl_seconds: int = 600) -> None:
+    sql = """
+        INSERT INTO oauth_states (state_hash, shop_domain, expires_at, consumed_at)
+        VALUES (%s, %s, NOW() + (%s || ' seconds')::interval, NULL)
+        ON CONFLICT (state_hash) DO UPDATE SET
+            shop_domain = EXCLUDED.shop_domain,
+            expires_at = EXCLUDED.expires_at,
+            consumed_at = NULL;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (state_hash, shop_domain, ttl_seconds))
+
+
+def consume_oauth_state(state_hash: str, shop_domain: str) -> bool:
+    sql = """
+        UPDATE oauth_states
+        SET consumed_at = NOW()
+        WHERE state_hash = %s
+          AND shop_domain = %s
+          AND consumed_at IS NULL
+          AND expires_at >= NOW()
+        RETURNING state_hash;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (state_hash, shop_domain))
+        row = cursor.fetchone()
+        return bool(row)
 
 
 def update_store_auth_tokens(
