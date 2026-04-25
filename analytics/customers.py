@@ -102,3 +102,39 @@ def get_never_returned_customers(store_id: int) -> list[dict]:
 
     logger.info(f"Found {len(results)} one-time customers.")
     return [dict(r) for r in results]
+
+
+def get_customer_health_metrics(store_id: int) -> dict:
+    """
+    Returns lightweight customer health KPIs for decision-focused reporting.
+    """
+    sql = """
+        WITH repeat_30d AS (
+            SELECT
+                o.customer_id
+            FROM orders o
+            WHERE o.store_id = %(store_id)s
+              AND o.created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY o.customer_id
+            HAVING COUNT(*) >= 2
+        )
+        SELECT
+            COALESCE(SUM(CASE WHEN c.orders_count >= 2 THEN 1 ELSE 0 END), 0) AS repeat_customer_count,
+            COALESCE(COUNT(r.customer_id), 0) AS repeat_customers_last_30d,
+            COALESCE(SUM(CASE WHEN (c.first_name IS NULL OR TRIM(c.first_name) = '')
+                               AND (c.last_name IS NULL OR TRIM(c.last_name) = '')
+                               AND (c.email IS NULL OR TRIM(c.email) = '') THEN 1 ELSE 0 END), 0) AS unidentified_customers
+        FROM customers c
+        LEFT JOIN repeat_30d r ON r.customer_id = c.id
+        WHERE c.store_id = %(store_id)s;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, {"store_id": store_id})
+        result = cursor.fetchone()
+
+    payload = dict(result) if result else {}
+    return {
+        "repeat_customer_count": int(payload.get("repeat_customer_count") or 0),
+        "repeat_customers_last_30d": int(payload.get("repeat_customers_last_30d") or 0),
+        "unidentified_customers": int(payload.get("unidentified_customers") or 0),
+    }

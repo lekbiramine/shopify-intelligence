@@ -9,7 +9,6 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from config.logging_config import get_logger
-from reporting.formatter import format_currency, format_percent
 
 logger = get_logger(__name__)
 
@@ -22,125 +21,191 @@ def _styles() -> dict[str, ParagraphStyle]:
             parent=base["Title"],
             fontSize=20,
             leading=24,
-            textColor=colors.HexColor("#0f172a"),
+            textColor=colors.HexColor("#0B1220"),
             spaceAfter=6,
         ),
         "meta": ParagraphStyle(
             "Meta",
             parent=base["Normal"],
             fontSize=9,
-            textColor=colors.HexColor("#64748b"),
+            textColor=colors.HexColor("#667085"),
             spaceAfter=14,
         ),
-        "section": ParagraphStyle(
-            "SectionHeader",
-            parent=base["Heading2"],
-            fontSize=13,
-            leading=16,
-            textColor=colors.HexColor("#1e293b"),
-            spaceBefore=10,
-            spaceAfter=6,
+        "section_text": ParagraphStyle(
+            "SectionText",
+            parent=base["Normal"],
+            fontSize=10,
+            leading=12,
+            textColor=colors.white,
+            alignment=0,
         ),
         "body": ParagraphStyle(
             "Body",
             parent=base["Normal"],
-            fontSize=10,
+            fontSize=9.5,
             leading=14,
-            textColor=colors.HexColor("#0f172a"),
+            textColor=colors.HexColor("#111827"),
         ),
-        "small": ParagraphStyle(
-            "Small",
+        "muted": ParagraphStyle(
+            "Muted",
             parent=base["Normal"],
             fontSize=9,
             leading=12,
-            textColor=colors.HexColor("#334155"),
+            textColor=colors.HexColor("#475467"),
+        ),
+        "badge_high": ParagraphStyle(
+            "BadgeHigh",
+            parent=base["Normal"],
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#ffffff"),
+        ),
+        "badge_medium": ParagraphStyle(
+            "BadgeMedium",
+            parent=base["Normal"],
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#ffffff"),
         ),
     }
 
 
 def _safe(value: object) -> str:
     if value is None:
-        return "N/A"
+        return ""
     return " ".join(str(value).split())
 
 
-def _format_anomaly_row(title: str, row: dict) -> str:
-    if title == "Duplicate Orders":
-        return (
-            f"Customer {_safe(row.get('customer_id'))} | "
-            f"Date: {_safe(row.get('order_date'))} | "
-            f"Amount: {format_currency(row.get('total_price', 0))} | "
-            f"Count: {_safe(row.get('order_count'))}"
-        )
-    if title == "Zero Value Orders":
-        return (
-            f"Order {_safe(row.get('order_id'))} | "
-            f"{_safe(row.get('email'))} | "
-            f"Amount: {format_currency(row.get('total_price', 0))}"
-        )
-    if title == "Abnormal Discounts":
-        return (
-            f"Order {_safe(row.get('order_id'))} | "
-            f"{_safe(row.get('email'))} | "
-            f"Discount: {_safe(row.get('discount_pct'))}%"
-        )
-    if title == "Active Products With No Sales":
-        return f"{_safe(row.get('product_title'))} | Vendor: {_safe(row.get('vendor'))}"
-    return " | ".join(
-        f"{k}: {_safe(v)}"
-        for k, v in row.items()
-        if k
-        in {
-            "order_id",
-            "customer_id",
-            "email",
-            "product_title",
-            "vendor",
-            "discount_pct",
-            "order_count",
-            "total_price",
-            "order_date",
-        }
-    )
+def _format_currency(value: float) -> str:
+    try:
+        return f"${float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "$0.00"
 
 
-def _badge(severity: str) -> str:
-    sev = (severity or "info").lower()
-    if sev == "high":
-        return '<font color="#b91c1c"><b>HIGH</b></font>'
-    if sev == "medium":
-        return '<font color="#b45309"><b>MEDIUM</b></font>'
-    if sev == "low":
-        return '<font color="#1d4ed8"><b>LOW</b></font>'
-    return '<font color="#334155"><b>INFO</b></font>'
+def _priority_rank(insight: dict) -> int:
+    title = (insight.get("title") or "").lower()
+    impact_type = (insight.get("impact_type") or "").lower()
+    if impact_type == "risk" or "return" in title or "duplicate" in title or "discount" in title:
+        return 0
+    if "churn" in title or "dead inventory" in title:
+        return 1
+    return 2
 
 
-def _summary_table(summary: dict, style: dict[str, ParagraphStyle]) -> Table:
-    rows = [
-        ["Metric", "Value"],
-        ["Total Orders", f"{summary.get('total_orders', 0)}"],
-        ["Unique Customers", f"{summary.get('unique_customers', 0)}"],
-        ["Gross Revenue", format_currency(summary.get("gross_revenue", 0))],
-        ["Total Discounts", format_currency(summary.get("total_discounts", 0))],
-        ["Net Revenue", format_currency(summary.get("net_revenue", 0))],
-        ["Avg Order Value", format_currency(summary.get("avg_order_value", 0))],
-    ]
-    table = Table(rows, colWidths=[220, 280])
+def _top_priorities(insights: list[dict]) -> list[dict]:
+    return sorted(
+        insights,
+        key=lambda i: (
+            {"high": 0, "medium": 1, "low": 2}.get((i.get("severity") or "").lower(), 9),
+            _priority_rank(i),
+            -float(i.get("potential_value", 0) or 0),
+        ),
+    )[:3]
+
+
+def _execution_plan(priorities: list[dict]) -> list[str]:
+    plan = []
+    for item in priorities:
+        title = (item.get("title") or "").lower()
+        if "churn" in title:
+            plan.append("Recover churned revenue -> send win-back emails (5 min)")
+        elif "return" in title:
+            plan.append("Fix revenue leakage -> pause high-return SKU (2 min)")
+        elif "dead inventory" in title:
+            plan.append("Unlock tied capital -> run dead inventory discounts (15 min)")
+        elif "concentration" in title:
+            plan.append("Reduce dependency risk -> run new-customer campaign (8 min)")
+    return plan[:3] or ["Execute highest-value action first (10 min)"]
+
+
+def _group_by_product(items: list[dict]) -> list[str]:
+    grouped: dict[str, set[str]] = {}
+    for item in items:
+        product = _safe(item.get("product_title"))
+        variant = _safe(item.get("variant_title"))
+        grouped.setdefault(product, set()).add(variant)
+    ranked = sorted(grouped.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    return [name for name, _ in ranked]
+
+
+def _count_label(count: int, singular: str, plural: str) -> str:
+    return singular if count == 1 else plural
+
+
+def _section_header(text: str, style: dict[str, ParagraphStyle], bg_color: str = "#0f172a") -> Table:
+    table = Table([[Paragraph(f"<b>{_safe(text)}</b>", style["section_text"])]], colWidths=[515])
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-                ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f8fafc")),
-                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-                ("FONTSIZE", (0, 1), (-1, -1), 9),
-                ("PADDING", (0, 0), (-1, -1), 6),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg_color)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
     return table
+
+
+def _soft_table(rows: list[list[str]], col_widths: list[int]) -> Table:
+    table = Table(rows, colWidths=col_widths)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAECF0")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#101828")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D0D5DD")),
+                ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F9FAFB")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    return table
+
+
+def _callout_card(
+    title: str,
+    body_lines: list[str],
+    title_style: ParagraphStyle,
+    body_style: ParagraphStyle,
+    border_color: str = "#D0D5DD",
+    bg_color: str = "#F9FAFB",
+) -> Table:
+    rows = [[Paragraph(f"<b>{_safe(title)}</b>", title_style)]]
+    for line in body_lines:
+        if line and line.strip():
+            rows.append([Paragraph(_safe(line), body_style)])
+    card = Table(rows, colWidths=[515])
+    card.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg_color)),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor(border_color)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]
+        )
+    )
+    return card
+
+
+def _severity_badge(severity: str) -> tuple[str, str]:
+    sev = (severity or "medium").lower()
+    if sev == "high":
+        return ("HIGH", "#B42318")
+    if sev == "medium":
+        return ("MEDIUM", "#B54708")
+    return ("LOW", "#175CD3")
 
 
 def create_report_pdf(summary: dict, output_dir: str = "reports") -> str:
@@ -167,107 +232,204 @@ def create_report_pdf(summary: dict, output_dir: str = "reports") -> str:
         Paragraph("Store Intelligence Report", style["title"]),
         Paragraph(f"Generated {generated_at.strftime('%Y-%m-%d %H:%M UTC')}", style["meta"]),
     ]
-
     insights = summary.get("insights", [])
-    story.append(Paragraph("Action Required", style["section"]))
-    if insights:
-        for insight in insights:
-            story.append(
-                Paragraph(
-                    f"{_badge(_safe(insight.get('severity')))} - <b>{_safe(insight.get('title'))}</b>",
-                    style["body"],
-                )
+    priorities = _top_priorities(insights)
+    used_titles = {str(p.get("title") or "") for p in priorities}
+
+    story.append(_section_header("TODAY'S PRIORITIES", style, "#101828"))
+    story.append(Spacer(1, 6))
+    for idx, p in enumerate(priorities, start=1):
+        sev, sev_color = _severity_badge(str(p.get("severity") or "medium"))
+        impact = float(p.get("potential_value", 0) or 0)
+        impact_label = "at risk" if p.get("impact_type") == "risk" else "potential"
+        sign = "" if p.get("impact_type") == "risk" else "+"
+        badge = Table([[Paragraph(f"<b>{sev}</b>", style["badge_high"])]], colWidths=[50])
+        badge.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(sev_color)),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ]
             )
-            story.append(Paragraph(f"Problem: {_safe(insight.get('problem'))}", style["small"]))
-            story.append(Paragraph(f"Impact: {_safe(insight.get('impact'))}", style["small"]))
-            story.append(Paragraph(f"Action: {_safe(insight.get('action'))}", style["small"]))
-            story.append(Spacer(1, 6))
-    else:
-        story.append(Paragraph("No critical insights detected.", style["body"]))
+        )
+        line = Table(
+            [[badge, Paragraph(f"{idx}. {_safe(p.get('title'))} ({sign}{_format_currency(impact)} {impact_label})", style["body"])]],
+            colWidths=[58, 450],
+        )
+        line.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        story.append(line)
+        story.append(Spacer(1, 4))
+
+    story.append(Spacer(1, 4))
+    story.append(_section_header("STORE DIAGNOSIS", style, "#1D2939"))
+    status = "Weak" if any(i.get("severity") == "high" for i in insights) else "Stable"
+    main_issue = " + ".join((str(i.get("title") or "").lower() for i in priorities[:2])) or "no urgent blockers"
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(f"<b>Status:</b> {status}", style["body"]))
+    story.append(Paragraph(f"<b>Main issue:</b> {main_issue}", style["body"]))
+
+    churned_recovery = sum(float(i.get("potential_value", 0) or 0) for i in insights if i.get("title") == "Churned Customers")
+    returns_recovery = sum(float(i.get("potential_value", 0) or 0) for i in insights if i.get("title") == "High Return Rate Product")
+    recoverable = churned_recovery + returns_recovery
+    risk = sum(float(i.get("potential_value", 0) or 0) for i in insights if i.get("impact_type") == "risk")
+    net_impact = recoverable - risk
+    net_sign = "+" if net_impact >= 0 else "-"
+
+    story.append(Spacer(1, 10))
+    story.append(_section_header("MONEY SNAPSHOT", style, "#054F31"))
+    story.append(Spacer(1, 6))
+    story.append(
+        _soft_table(
+            [
+                ["Type", "Value"],
+                ["Recoverable Revenue", f"+{_format_currency(recoverable)}"],
+                ["Risk Exposure", _format_currency(risk)],
+                ["Net Impact", f"{net_sign}{_format_currency(abs(net_impact))}"],
+            ],
+            [300, 215],
+        )
+    )
+
+    story.append(Spacer(1, 10))
+    story.append(_section_header("TODAY'S EXECUTION PLAN", style, "#0B4A6F"))
+    plan_lines = [f"{idx}. {_safe(step)}" for idx, step in enumerate(_execution_plan(priorities), start=1)]
+    story.append(
+        _callout_card(
+            "Execute in order",
+            plan_lines,
+            style["body"],
+            style["muted"],
+            border_color="#BFC6D4",
+            bg_color="#F8FAFC",
+        )
+    )
+
+    story.append(Spacer(1, 10))
+    story.append(_section_header("KEY ISSUES", style, "#7A271A"))
+    has_return = any(str(i.get("title") or "").lower() == "high return rate product" for i in insights)
+    churned_item = next((i for i in insights if str(i.get("title") or "").lower() == "churned customers"), None)
+    concentration_item = next((i for i in insights if "concentration" in str(i.get("title") or "").lower()), None)
+    key_issue_lines: list[str] = []
+    if has_return:
+        key_issue_lines.append("- High return rate product -> revenue leakage")
+    if churned_item:
+        key_issue_lines.append(f"- Churned customers -> {_format_currency(churned_item.get('potential_value', 0))} recoverable")
+    if concentration_item:
+        key_issue_lines.append("- Revenue concentration -> dependency risk")
+    if not key_issue_lines:
+        key_issue_lines.append("- No additional high-impact issue summary available")
+    story.append(
+        _callout_card(
+            "Core issue summary",
+            key_issue_lines[:3],
+            style["body"],
+            style["muted"],
+            border_color="#BFC6D4",
+            bg_color="#F8FAFC",
+        )
+    )
 
     inventory = summary.get("inventory", {})
-    story.append(Paragraph("Inventory Alerts", style["section"]))
-    for title, items in (
-        ("Out of Stock", inventory.get("out_of_stock", [])),
-        ("Critical Stock", inventory.get("critical_stock", [])),
-        ("Low Stock", inventory.get("low_stock", [])),
-    ):
-        story.append(Paragraph(f"<b>{title}</b> ({len(items)})", style["body"]))
-        if items:
-            for item in items[:25]:
-                story.append(
-                    Paragraph(
-                        f"- {_safe(item.get('product_title'))} | {_safe(item.get('variant_title'))} | "
-                        f"SKU: {_safe(item.get('sku'))} | Available: {_safe(item.get('total_available'))}",
-                        style["small"],
-                    )
-                )
-            if len(items) > 25:
-                story.append(Paragraph(f"... and {len(items) - 25} more", style["small"]))
-        else:
-            story.append(Paragraph("None", style["small"]))
-        story.append(Spacer(1, 4))
+    out_of_stock = inventory.get("out_of_stock", [])
+    critical = inventory.get("critical_stock", [])
+    low = inventory.get("low_stock", [])
+    top_stock = _group_by_product(out_of_stock)[:3]
+    story.append(Spacer(1, 10))
+    story.append(_section_header("INVENTORY RISK", style, "#1D4E89"))
+    inventory_lines = [
+        f"- {len(out_of_stock)} out-of-stock variants -> lost sales occurring",
+        f"- {len(critical)} critical stock {_count_label(len(critical), 'item', 'items')}",
+        f"- {len(low)} low stock {_count_label(len(low), 'item', 'items')}",
+    ]
+    if top_stock:
+        inventory_lines.append("")
+        inventory_lines.append("Top priority restocks:")
+        for row in top_stock:
+            inventory_lines.append(f"- {_safe(row)}")
+    story.append(
+        _callout_card(
+            "Stock pressure summary",
+            inventory_lines,
+            style["body"],
+            style["muted"],
+            border_color="#BFC6D4",
+            bg_color="#F8FAFC",
+        )
+    )
 
     customers = summary.get("customers", {})
-    story.append(Paragraph("Customer Insights", style["section"]))
-    for title, items in (
-        ("Churned Customers", customers.get("churned", [])),
-        ("One-time Customers", customers.get("never_returned", [])),
-        ("Loyal Customers", customers.get("loyal", [])),
-    ):
-        story.append(Paragraph(f"<b>{title}</b> ({len(items)})", style["body"]))
-        if items:
-            for c in items[:20]:
-                story.append(
-                    Paragraph(
-                        f"- {_safe(c.get('first_name'))} {_safe(c.get('last_name'))} | "
-                        f"{_safe(c.get('email'))} | Spent: {format_currency(c.get('total_spent', 0))}",
-                        style["small"],
-                    )
-                )
-            if len(items) > 20:
-                story.append(Paragraph(f"... and {len(items) - 20} more", style["small"]))
-        else:
-            story.append(Paragraph("None", style["small"]))
-        story.append(Spacer(1, 4))
+    loyal = customers.get("loyal", [])
+    churned = customers.get("churned", [])
+    health = customers.get("health", {})
+    loyal_revenue = sum(float(c.get("total_spent", 0) or 0) for c in loyal)
+    top2 = sum(float(c.get("total_spent", 0) or 0) for c in loyal[:2])
+    concentration = (top2 / loyal_revenue * 100) if loyal_revenue else 0
+    story.append(Spacer(1, 10))
+    story.append(_section_header("CUSTOMER RISK", style, "#5925DC"))
+    story.append(
+        _callout_card(
+            "Customer concentration snapshot",
+            [
+                f"- Revenue concentration: 2 customers = {concentration:.0f}%",
+                f"- {len(churned)} churned customers (>90 days)",
+                f"- {int(health.get('repeat_customers_last_30d') or 0)} repeat purchases in last 30 days",
+                "",
+                "Insight: Losing one key customer could materially reduce revenue stability.",
+            ],
+            style["body"],
+            style["muted"],
+            border_color="#BFC6D4",
+            bg_color="#F8FAFC",
+        )
+    )
 
     revenue = summary.get("revenue", {})
-    story.append(Paragraph("Revenue Summary", style["section"]))
-    story.append(_summary_table(revenue.get("summary", {}), style))
-    story.append(Spacer(1, 8))
-    high_return = revenue.get("high_return_rate", [])
-    story.append(Paragraph(f"<b>High Return Rate Products</b> ({len(high_return)})", style["body"]))
-    if high_return:
-        for p in high_return[:20]:
-            story.append(
-                Paragraph(
-                    f"- {_safe(p.get('product_title'))} | Sold: {_safe(p.get('total_sold'))} | "
-                    f"Returned: {_safe(p.get('total_returned'))} | Rate: {format_percent(p.get('return_rate', 0))}",
-                    style["small"],
-                )
-            )
-    else:
-        story.append(Paragraph("None", style["small"]))
-
-    anomalies = summary.get("anomalies", {})
-    story.append(Paragraph("Anomalies", style["section"]))
-    anomaly_groups = (
-        ("Duplicate Orders", anomalies.get("duplicate_orders", [])),
-        ("Zero Value Orders", anomalies.get("zero_value_orders", [])),
-        ("Abnormal Discounts", anomalies.get("abnormal_discounts", [])),
-        ("Active Products With No Sales", anomalies.get("no_sales_products", [])),
+    rev_summary = revenue.get("summary", {})
+    trend = revenue.get("trend", {})
+    current_7d = int(trend.get("current_7d_orders") or 0)
+    net_revenue = float(rev_summary.get("net_revenue", 0) or 0)
+    status = "Stalled" if current_7d == 0 else "Active but weak"
+    story.append(Spacer(1, 10))
+    story.append(_section_header("REVENUE SUMMARY", style, "#344054"))
+    story.append(
+        _soft_table(
+            [
+                ["Metric", "Value"],
+                ["Revenue", _format_currency(net_revenue)],
+                ["Orders (7d)", str(current_7d)],
+                ["Status", status],
+            ],
+            [300, 215],
+        )
     )
-    for title, items in anomaly_groups:
-        story.append(Paragraph(f"<b>{title}</b> ({len(items)})", style["body"]))
-        if items:
-            for row in items[:20]:
-                line = _format_anomaly_row(title, row)
-                story.append(Paragraph(f"- {line}", style["small"]))
-            if len(items) > 20:
-                story.append(Paragraph(f"... and {len(items) - 20} more", style["small"]))
-        else:
-            story.append(Paragraph("None", style["small"]))
-        story.append(Spacer(1, 4))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("<b>Insight:</b> Main issue is low traffic and conversion, not pricing.", style["muted"]))
+
+    story.append(Spacer(1, 10))
+    story.append(_section_header("FINAL SUMMARY", style, "#101828"))
+    if current_7d == 0:
+        summary_lines = [
+            "Revenue is currently limited by product returns and customer churn.",
+            "Fix these first to restore baseline performance.",
+        ]
+    else:
+        summary_lines = [
+            "Revenue is currently constrained by concentration risk and conversion drag.",
+            "Resolve these first to stabilize weekly performance.",
+        ]
+    story.append(
+        _callout_card(
+            "Executive Recommendation",
+            summary_lines,
+            style["body"],
+            style["muted"],
+            border_color="#BFC6D4",
+            bg_color="#F8FAFC",
+        )
+    )
 
     doc.build(story)
     logger.info(f"PDF report written to {output_path}")

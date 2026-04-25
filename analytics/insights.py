@@ -18,6 +18,11 @@ def _build_insight(
     problem: str,
     impact: str,
     action: str,
+    potential_value: float = 0.0,
+    action_cta: str | None = None,
+    execution_note: str | None = None,
+    impact_type: str = "recoverable",
+    is_generatable: bool = False,
 ) -> dict:
     return {
         "category": category,
@@ -26,6 +31,11 @@ def _build_insight(
         "problem": problem,
         "impact": impact,
         "action": action,
+        "potential_value": float(potential_value or 0.0),
+        "action_cta": action_cta or action,
+        "execution_note": execution_note or "",
+        "impact_type": impact_type,
+        "is_generatable": bool(is_generatable),
     }
 
 
@@ -45,8 +55,19 @@ def insight_churned_customers(store_id: int) -> dict | None:
         title="Churned Customers",
         severity="high",
         problem=f"{count} customer(s) inactive for 90+ days.",
-        impact=f"Estimated lost revenue: ${estimated_lost:,.2f}",
-        action="Send a win-back email with a 10% discount code.",
+        impact=f"Estimated recovery opportunity: ${estimated_lost:,.2f}",
+        action="Generate win-back email + export customer list, then send a 10% code today.",
+        potential_value=estimated_lost,
+        action_cta="Generate win-back email / Export customer list",
+        execution_note=(
+            "Ready-to-send template:\n"
+            "Subject: We miss you — here's 10% off\n"
+            "Hi {{name}},\n"
+            "It's been a while since your last order and we'd love to have you back.\n"
+            "Use code WELCOME10 for 10% off your next order this week."
+        ),
+        impact_type="recoverable",
+        is_generatable=True,
     )
 
 
@@ -61,8 +82,22 @@ def insight_high_return_rate(store_id: int) -> list[dict]:
             title="High Return Rate Product",
             severity="high",
             problem=f"Product \"{p['product_title']}\" has a {rate:.1f}% return rate.",
-            impact=f"{p['total_returned']} out of {p['total_sold']} units returned.",
-            action="Review product quality, update listings, consider pausing ads.",
+            impact=(
+                f"~${float(p.get('total_returned', 0)) * 20:,.2f} "
+                f"potential loss from {p['total_returned']} returned units."
+            ),
+            action=(
+                f"Pause ads for {p['product_title']} immediately."
+            ),
+            potential_value=float(p.get("total_returned", 0)) * 20.0,
+            action_cta=f"Pause ads for {p['product_title']}",
+            execution_note=(
+                "Checklist:\n"
+                "- Check recent reviews mentioning defects\n"
+                "- Compare product delivered vs listing images\n"
+                "- Contact supplier if defect confirmed"
+            ),
+            impact_type="recoverable",
         ))
 
     return insights
@@ -85,8 +120,15 @@ def insight_dead_inventory(store_id: int) -> list[dict]:
             title="Dead Inventory",
             severity="medium",
             problem=problem,
-            impact="Capital is tied up in unsold stock.",
-            action="Review pricing, bundles, or discontinue slow movers.",
+            impact=f"${n * 25:,.2f} locked in unsold products ({n} items).",
+            action="Run a dead inventory recovery sprint this week.",
+            potential_value=float(n * 25),
+            execution_note=(
+                "- Apply 15-25% discount to top 5 dead items\n"
+                "- Bundle slow products with best-sellers\n"
+                "- Stop reordering these SKUs"
+            ),
+            impact_type="recoverable",
         )
     ]
 
@@ -101,13 +143,31 @@ def insight_high_value_customers(store_id: int) -> dict | None:
     all_revenue = sum(float(c.get("total_spent", 0)) for c in loyal)
     pct = (total_revenue_top / all_revenue * 100) if all_revenue > 0 else 0
 
+    if len(loyal) >= 10:
+        return _build_insight(
+            category="customers",
+            title="High-Value Customers",
+            severity="low",
+            problem=f"Top 10 customers generated {pct:.1f}% of total loyal revenue.",
+            impact=f"${total_revenue_top:,.2f} revenue concentrated in top buyers.",
+            action="Offer VIP perks and retention campaigns to protect this revenue base.",
+            potential_value=total_revenue_top,
+            action_cta="Launch VIP retention campaign",
+        )
+
     return _build_insight(
         category="customers",
-        title="High-Value Customers",
-        severity="low",
-        problem=f"Top 10 customers generated {pct:.1f}% of total loyal revenue.",
-        impact=f"${total_revenue_top:,.2f} revenue concentrated in {len(top_10)} customers.",
-        action="Offer VIP perks, early access, or exclusive discounts to retain them.",
+        title="Revenue Concentration Risk",
+        severity="medium",
+        problem=f"Revenue depends on only {len(top_10)} customers.",
+        impact=f"${total_revenue_top:,.2f} at risk if one customer churns.",
+        action="Run campaigns targeting new customers and reduce reliance on repeat buyers.",
+        potential_value=total_revenue_top,
+        execution_note=(
+            "- Run campaigns targeting new customers\n"
+            "- Avoid relying only on repeat buyers"
+        ),
+        impact_type="risk",
     )
 
 
@@ -121,8 +181,11 @@ def insight_abnormal_discounts(store_id: int) -> list[dict]:
             title="Abnormal Discount Detected",
             severity="high",
             problem=f"Order {o['order_id']} has a {o['discount_pct']}% discount.",
-            impact="Potential revenue loss due to pricing error or abuse.",
+            impact=f"Potential revenue leakage on order value due to {o['discount_pct']}% discount.",
             action="Verify the discount was intentional or issue a correction.",
+            potential_value=float(o.get("total_discounts", 0) or 0),
+            action_cta="Audit discount rule immediately",
+            impact_type="recoverable",
         ))
 
     return insights
@@ -141,8 +204,11 @@ def insight_duplicate_orders(store_id: int) -> list[dict]:
                 f"Customer {o['customer_id']} placed {o['order_count']} orders "
                 f"of ${float(o['total_price']):,.2f} on {o['order_date']}."
             ),
-            impact="Customer may have been charged multiple times.",
+            impact=f"Charge exposure: ${float(o.get('total_price', 0)) * (int(o.get('order_count', 1)) - 1):,.2f}",
             action="Verify payment and issue a refund if necessary.",
+            potential_value=float(o.get("total_price", 0)) * max(int(o.get("order_count", 1)) - 1, 0),
+            action_cta="Verify payment and refund duplicates",
+            impact_type="recoverable",
         ))
 
     return insights

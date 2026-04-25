@@ -7,11 +7,13 @@ from analytics.customers import (
     get_churned_customers,
     get_loyal_customers,
     get_never_returned_customers,
+    get_customer_health_metrics,
 )
 from analytics.revenue import (
     get_high_return_rate_products,
     get_revenue_by_product,
     get_revenue_summary,
+    get_order_volume_trend,
 )
 from analytics.anomalies import (
     get_duplicate_orders,
@@ -43,11 +45,13 @@ def build_summary(store_id: int) -> dict:
             "churned": get_churned_customers(store_id),
             "loyal": get_loyal_customers(store_id),
             "never_returned": get_never_returned_customers(store_id),
+            "health": get_customer_health_metrics(store_id),
         },
         "revenue": {
             "summary": get_revenue_summary(store_id),
             "by_product": get_revenue_by_product(store_id),
             "high_return_rate": get_high_return_rate_products(store_id),
+            "trend": get_order_volume_trend(store_id),
         },
         "anomalies": {
             "duplicate_orders": get_duplicate_orders(store_id),
