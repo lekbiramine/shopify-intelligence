@@ -4,6 +4,15 @@ from config.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def _require_store_id(store_id: int) -> int:
+    if store_id is None:
+        raise ValueError("store_id is required")
+    store_id_int = int(store_id)
+    if store_id_int <= 0:
+        raise ValueError("store_id must be a positive integer")
+    return store_id_int
+
+
 # ─── Stores ─────────────────────────────────────────────────────────────────
 
 def upsert_store_connection(
@@ -498,16 +507,36 @@ def create_job_run(store_id: int, shop_domain: str) -> int:
 
 
 def complete_job_run(job_run_id: int, *, status: str, email_sent: bool, error_message: str | None = None) -> None:
+    raise RuntimeError("complete_job_run is not allowed without explicit store_id. Use complete_job_run_for_store().")
+
+
+def complete_job_run_for_store(
+    store_id: int,
+    job_run_id: int,
+    *,
+    status: str,
+    email_sent: bool,
+    report_path: str | None = None,
+    recipient_email: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    scoped_store_id = _require_store_id(store_id)
     sql = """
         UPDATE job_runs
         SET status = %s,
             email_sent = %s,
+            report_path = %s,
+            recipient_email = %s,
             error_message = %s,
             finished_at = NOW()
-        WHERE id = %s;
+        WHERE id = %s
+          AND store_id = %s;
     """
     with get_cursor(commit=True) as cursor:
-        cursor.execute(sql, (status, email_sent, error_message, job_run_id))
+        cursor.execute(
+            sql,
+            (status, email_sent, report_path, recipient_email, error_message, job_run_id, scoped_store_id),
+        )
 
 
 def get_recent_job_runs(limit: int = 20) -> list[dict]:
@@ -528,3 +557,285 @@ def get_recent_job_runs(limit: int = 20) -> list[dict]:
         cursor.execute(sql, (limit,))
         rows = cursor.fetchall() or []
         return [dict(r) for r in rows]
+
+
+def create_report_record(*, store_id: int, report_path: str, recipient_email: str) -> dict:
+    scoped_store_id = _require_store_id(store_id)
+    sql = """
+        INSERT INTO reports (store_id, report_path, recipient_email, created_at)
+        VALUES (%s, %s, %s, NOW())
+        RETURNING id, store_id, report_path, recipient_email, created_at;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (scoped_store_id, report_path, recipient_email))
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+
+
+def get_store_contact_email_by_id(store_id: int) -> str | None:
+    scoped_store_id = _require_store_id(store_id)
+    sql = """
+        SELECT contact_email
+        FROM stores
+        WHERE id = %s
+        LIMIT 1;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (scoped_store_id,))
+        row = cursor.fetchone() or {}
+        email = (row.get("contact_email") or "").strip()
+        return email or None
+
+
+# ─── Tasks ──────────────────────────────────────────────────────────────────
+
+def get_task_by_fingerprint(store_id: int, fingerprint: str) -> dict | None:
+    sql = """
+        SELECT *
+        FROM tasks
+        WHERE store_id = %s
+          AND fingerprint = %s
+        LIMIT 1;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (store_id, fingerprint))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def create_task(
+    *,
+    store_id: int,
+    task_type: str,
+    title: str,
+    description: str,
+    status: str,
+    priority: str,
+    due_at,
+    expected_impact: float,
+    fingerprint: str,
+    primary_entity_id: str | None,
+    metadata_json: str,
+) -> dict:
+    sql = """
+        INSERT INTO tasks (
+            store_id, type, title, description, status, priority,
+            created_at, updated_at, last_status_change_at,
+            due_at, expected_impact, fingerprint, primary_entity_id, metadata_json
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW(), %s, %s, %s, %s, %s::jsonb)
+        RETURNING *;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(
+            sql,
+            (
+                store_id,
+                task_type,
+                title,
+                description,
+                status,
+                priority,
+                due_at,
+                expected_impact,
+                fingerprint,
+                primary_entity_id,
+                metadata_json,
+            ),
+        )
+        row = cursor.fetchone()
+        return dict(row)
+
+
+def update_task_metadata(
+    *,
+    task_id: int,
+    store_id: int,
+    title: str,
+    description: str,
+    priority: str,
+    expected_impact: float,
+    due_at,
+    metadata_json: str,
+) -> dict:
+    sql = """
+        UPDATE tasks
+        SET title = %s,
+            description = %s,
+            priority = %s,
+            expected_impact = %s,
+            due_at = %s,
+            metadata_json = %s::jsonb,
+            updated_at = NOW()
+        WHERE id = %s
+          AND (%s IS NULL OR store_id = %s)
+        RETURNING *;
+    """
+    scoped_store_id = _require_store_id(store_id)
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(
+            sql,
+            (title, description, priority, expected_impact, due_at, metadata_json, task_id, scoped_store_id, scoped_store_id),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+
+
+def update_task_status(
+    *,
+    task_id: int,
+    store_id: int,
+    status: str,
+    completed_at=None,
+    due_at=None,
+    baseline_metric=None,
+) -> dict | None:
+    sql = """
+        UPDATE tasks
+        SET status = %s,
+            completed_at = COALESCE(%s, completed_at),
+            due_at = COALESCE(%s, due_at),
+            baseline_metric = COALESCE(%s, baseline_metric),
+            last_status_change_at = NOW(),
+            updated_at = NOW()
+        WHERE id = %s
+          AND (%s IS NULL OR store_id = %s)
+        RETURNING *;
+    """
+    scoped_store_id = _require_store_id(store_id)
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (status, completed_at, due_at, baseline_metric, task_id, scoped_store_id, scoped_store_id))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def set_task_actual_impact(task_id: int, actual_impact: float, store_id: int) -> None:
+    sql = """
+        UPDATE tasks
+        SET actual_impact = %s,
+            updated_at = NOW()
+        WHERE id = %s
+          AND (%s IS NULL OR store_id = %s);
+    """
+    scoped_store_id = _require_store_id(store_id)
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (actual_impact, task_id, scoped_store_id, scoped_store_id))
+
+
+def touch_task_reminder(task_id: int, store_id: int) -> None:
+    sql = """
+        UPDATE tasks
+        SET last_reminded_at = NOW(),
+            updated_at = NOW()
+        WHERE id = %s
+          AND (%s IS NULL OR store_id = %s);
+    """
+    scoped_store_id = _require_store_id(store_id)
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (task_id, scoped_store_id, scoped_store_id))
+
+
+def list_tasks_for_store(store_id: int, limit: int = 100) -> list[dict]:
+    sql = """
+        SELECT *
+        FROM tasks
+        WHERE store_id = %s
+        ORDER BY
+            CASE status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END,
+            CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+            expected_impact DESC,
+            created_at DESC
+        LIMIT %s;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (store_id, limit))
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
+
+
+def get_task_by_id(task_id: int) -> dict | None:
+    raise RuntimeError("get_task_by_id is not allowed without explicit store_id. Use get_task_by_id_for_store().")
+
+
+def get_task_by_id_for_store(task_id: int, store_id: int) -> dict | None:
+    scoped_store_id = _require_store_id(store_id)
+    sql = """
+        SELECT *
+        FROM tasks
+        WHERE id = %s
+          AND store_id = %s
+        LIMIT 1;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (task_id, scoped_store_id))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def get_tasks_for_report(store_id: int) -> list[dict]:
+    sql = """
+        SELECT *
+        FROM tasks
+        WHERE store_id = %s
+        ORDER BY updated_at DESC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (store_id,))
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
+
+
+def get_due_task_evaluations(store_id: int) -> list[dict]:
+    sql = """
+        SELECT *
+        FROM tasks
+        WHERE store_id = %s
+          AND status = 'completed'
+          AND due_at IS NOT NULL
+          AND due_at <= NOW()
+          AND actual_impact IS NULL
+        ORDER BY due_at ASC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (store_id,))
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
+
+
+def get_tasks_needing_reminders(store_id: int) -> list[dict]:
+    sql = """
+        SELECT *
+        FROM tasks
+        WHERE store_id = %s
+          AND (
+            (status = 'pending' AND (last_reminded_at IS NULL OR last_reminded_at < NOW() - INTERVAL '24 hours'))
+            OR
+            (status = 'in_progress' AND last_status_change_at < NOW() - INTERVAL '48 hours'
+             AND (last_reminded_at IS NULL OR last_reminded_at < NOW() - INTERVAL '24 hours'))
+          );
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (store_id,))
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
+
+
+def count_new_customers_in_window(store_id: int, start_at, end_at) -> int:
+    sql = """
+        WITH first_orders AS (
+            SELECT customer_id, MIN(created_at) AS first_order_at
+            FROM orders
+            WHERE store_id = %s
+              AND customer_id IS NOT NULL
+              AND financial_status = 'paid'
+            GROUP BY customer_id
+        )
+        SELECT COUNT(*)
+        FROM first_orders
+        WHERE first_order_at >= %s
+          AND first_order_at < %s;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (store_id, start_at, end_at))
+        row = cursor.fetchone() or {}
+        return int(row.get("count") or 0)

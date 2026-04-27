@@ -4,6 +4,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from config import settings
 from config.logging_config import get_logger
+from db.queries import get_store_contact_email_by_id
 
 logger = get_logger(__name__)
 
@@ -63,3 +64,15 @@ def send_email(subject: str, body: str, attachment_path: str | None = None, reci
     except Exception as e:
         logger.error(f"Unexpected error sending email: {e}")
         raise
+
+
+def send_store_report_email(*, store_id: int, subject: str, body: str, attachment_path: str) -> str:
+    recipient = get_store_contact_email_by_id(store_id)
+    if not recipient:
+        raise RuntimeError(f"No contact_email configured for store_id={store_id}")
+    send_email(subject, body, attachment_path=attachment_path, recipient=recipient)
+    logger.info(
+        "Store-scoped email sent",
+        extra={"store_id": store_id, "recipient": recipient, "report_path": attachment_path},
+    )
+    return recipient

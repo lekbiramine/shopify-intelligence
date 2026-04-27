@@ -23,6 +23,7 @@ def _build_insight(
     execution_note: str | None = None,
     impact_type: str = "recoverable",
     is_generatable: bool = False,
+    primary_entity_id: str | None = None,
 ) -> dict:
     return {
         "category": category,
@@ -36,6 +37,7 @@ def _build_insight(
         "execution_note": execution_note or "",
         "impact_type": impact_type,
         "is_generatable": bool(is_generatable),
+        "primary_entity_id": primary_entity_id,
     }
 
 
@@ -98,6 +100,7 @@ def insight_high_return_rate(store_id: int) -> list[dict]:
                 "- Contact supplier if defect confirmed"
             ),
             impact_type="recoverable",
+            primary_entity_id=str(p.get("product_id")),
         ))
 
     return insights

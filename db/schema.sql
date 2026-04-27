@@ -355,8 +355,93 @@ CREATE TABLE IF NOT EXISTS job_runs (
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     finished_at TIMESTAMPTZ,
     email_sent BOOLEAN NOT NULL DEFAULT FALSE,
+    report_path TEXT,
+    recipient_email VARCHAR(255),
     error_message TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_runs_store_id_started_at ON job_runs(store_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_job_runs_status_started_at ON job_runs(status, started_at DESC);
+
+ALTER TABLE job_runs
+    ADD COLUMN IF NOT EXISTS report_path TEXT;
+ALTER TABLE job_runs
+    ADD COLUMN IF NOT EXISTS recipient_email VARCHAR(255);
+
+-- Report delivery tracking per store
+CREATE TABLE IF NOT EXISTS reports (
+    id BIGSERIAL PRIMARY KEY,
+    store_id BIGINT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    report_path TEXT NOT NULL,
+    recipient_email VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reports_store_id_created_at ON reports(store_id, created_at DESC);
+
+-- Action-driven task tracking
+CREATE TABLE IF NOT EXISTS tasks (
+    id BIGSERIAL PRIMARY KEY,
+    store_id BIGINT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    type VARCHAR(64) NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    priority VARCHAR(16) NOT NULL DEFAULT 'medium',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_status_change_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_reminded_at TIMESTAMPTZ,
+    due_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    expected_impact NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    actual_impact NUMERIC(14, 2),
+    baseline_metric NUMERIC(14, 4),
+    fingerprint CHAR(64) NOT NULL,
+    primary_entity_id VARCHAR(128),
+    metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CHECK (status IN ('pending', 'in_progress', 'completed', 'ignored')),
+    CHECK (priority IN ('high', 'medium', 'low')),
+    UNIQUE (store_id, fingerprint)
+);
+
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS store_id BIGINT;
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS type VARCHAR(64);
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'pending';
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS priority VARCHAR(16) DEFAULT 'medium';
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS last_status_change_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMPTZ;
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ;
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS expected_impact NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS actual_impact NUMERIC(14, 2);
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS baseline_metric NUMERIC(14, 4);
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS fingerprint CHAR(64);
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS primary_entity_id VARCHAR(128);
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS metadata_json JSONB DEFAULT '{}'::jsonb;
+
+CREATE INDEX IF NOT EXISTS idx_tasks_store_status_priority ON tasks(store_id, status, priority);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_last_reminded_at ON tasks(last_reminded_at);

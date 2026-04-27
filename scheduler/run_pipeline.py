@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from config.logging_config import get_logger
 from config import settings
-from db.queries import update_store_auth_tokens
+from db.queries import create_report_record, get_store_contact_email_by_id, update_store_auth_tokens
 from etl.extract import (
     fetch_products,
     fetch_customers,
@@ -24,8 +25,15 @@ from etl.load import (
 )
 from analytics.summary import build_summary
 from reporting.templates import get_email_subject
-from reporting.email_sender import send_email
-from reporting.pdf_report import create_report_pdf
+from reporting.email_sender import send_store_report_email
+from reporting.pdf_report_v2 import create_report_pdf
+from tasks.engine import (
+    auto_verify_tasks_from_summary,
+    build_report_task_sections,
+    collect_due_reminders,
+    evaluate_completed_task_impacts,
+    sync_tasks_from_summary,
+)
 from utils.decorators import log_execution
 from utils.shopify_auth import (
     fetch_access_scopes,
@@ -162,20 +170,49 @@ def run_etl_for_store(
     logger.info("ETL pipeline completed.")
 
 
+def _assert_store_report_delivery_scope(*, store_id: int, report_path: str, recipient_email: str) -> None:
+    expected = get_store_contact_email_by_id(store_id)
+    if not expected:
+        raise RuntimeError(f"No contact_email configured for store_id={store_id}")
+    if recipient_email.strip().lower() != expected.strip().lower():
+        raise RuntimeError(
+            f"Recipient email mismatch for store_id={store_id}: expected {expected}, got {recipient_email}"
+        )
+    normalized = str(Path(report_path)).replace("\\", "/")
+    if f"/reports/{store_id}/" not in f"/{normalized}":
+        raise RuntimeError(f"Report path is not store-scoped: {report_path}")
+
+
 @log_execution
-def run_reporting_for_store(*, store_id: int, recipient_email: str) -> None:
-    logger.info("Starting reporting pipeline...")
+def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
+    logger.info("Starting reporting pipeline...", extra={"store_id": store_id})
 
     summary = build_summary(store_id)
-    pdf_path = create_report_pdf(summary)
+    sync_tasks_from_summary(store_id, summary)
+    auto_verify_tasks_from_summary(store_id, summary)
+    evaluate_completed_task_impacts(store_id, summary)
+    reminders = collect_due_reminders(store_id)
+    task_sections = build_report_task_sections(store_id, summary)
+    pdf_path = create_report_pdf(summary, output_dir=f"reports/{store_id}", task_sections=task_sections, store_id=store_id)
+    recipient_email = get_store_contact_email_by_id(store_id) or ""
+    _assert_store_report_delivery_scope(store_id=store_id, report_path=pdf_path, recipient_email=recipient_email)
     subject = get_email_subject()
+    reminder_lines = []
+    for task in reminders[:5]:
+        reminder_lines.append(f"- [{task.get('status')}] {task.get('title')} (impact ${float(task.get('expected_impact') or 0):,.2f})")
+    reminder_block = ""
+    if reminder_lines:
+        reminder_block = "\n\nTask reminders:\n" + "\n".join(reminder_lines)
     email_body = (
         "Your daily Store Intelligence report is attached as a PDF.\n\n"
         f"Attachment: {pdf_path}"
+        f"{reminder_block}"
     )
-    send_email(subject, email_body, attachment_path=pdf_path, recipient=recipient_email)
+    recipient = send_store_report_email(store_id=store_id, subject=subject, body=email_body, attachment_path=pdf_path)
+    create_report_record(store_id=store_id, report_path=pdf_path, recipient_email=recipient)
 
-    logger.info("Reporting pipeline completed.")
+    logger.info("Reporting pipeline completed.", extra={"store_id": store_id, "report_path": pdf_path, "recipient": recipient})
+    return pdf_path, recipient
 
 
 @log_execution
@@ -211,10 +248,7 @@ def run_reporting() -> None:
     if not store:
         raise RuntimeError("No store row found for SHOPIFY_STORE_URL; connect the store via onboarding first.")
 
-    recipient = (store.get("contact_email") or settings.EMAIL_RECIPIENT or "").strip()
-    if not recipient:
-        raise RuntimeError("No recipient email found for store.")
-    run_reporting_for_store(store_id=store["id"], recipient_email=recipient)
+    run_reporting_for_store(store_id=store["id"])
 
 
 @log_execution
@@ -240,10 +274,7 @@ def run_pipeline() -> None:
         refresh_token=store.get("refresh_token"),
         access_token_expires_at=store.get("access_token_expires_at"),
     )
-    recipient = (store.get("contact_email") or settings.EMAIL_RECIPIENT or "").strip()
-    if not recipient:
-        raise RuntimeError("No recipient email found for store.")
-    run_reporting_for_store(store_id=store["id"], recipient_email=recipient)
+    run_reporting_for_store(store_id=store["id"])
 
     logger.info("=" * 50)
     logger.info("PIPELINE COMPLETED SUCCESSFULLY")

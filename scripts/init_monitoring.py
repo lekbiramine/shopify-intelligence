@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS job_runs (
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     finished_at TIMESTAMPTZ,
     email_sent BOOLEAN NOT NULL DEFAULT FALSE,
+    report_path TEXT,
+    recipient_email VARCHAR(255),
     error_message TEXT
 );
 """

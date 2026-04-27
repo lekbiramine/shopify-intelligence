@@ -35,10 +35,9 @@ def run_forever(poll_seconds: int = 20) -> None:
             stores = get_active_scheduled_stores()
             for s in stores:
                 shop_domain = (s.get("shop_domain") or "").strip()
-                to_addr = (s.get("contact_email") or "").strip()
                 hhmm = (s.get("report_schedule_time") or "").strip()
                 tz_name = (s.get("report_timezone") or "UTC").strip() or "UTC"
-                if not shop_domain or not to_addr or not hhmm:
+                if not shop_domain or not hhmm:
                     continue
 
                 try:
@@ -62,7 +61,7 @@ def run_forever(poll_seconds: int = 20) -> None:
                     logger.warning("Missing store_id/access_token for %s; skipping", shop_domain)
                     continue
 
-                logger.info("Sending scheduled report for %s to %s (%s %s)", shop_domain, to_addr, tz_name, hhmm)
+                logger.info("Sending scheduled report for %s (%s %s)", shop_domain, tz_name, hhmm)
                 run_etl_for_store(
                     store_id=store_id,
                     shop_domain=shop_domain,
@@ -70,7 +69,7 @@ def run_forever(poll_seconds: int = 20) -> None:
                     refresh_token=refresh_token,
                     access_token_expires_at=access_token_expires_at,
                 )
-                run_reporting_for_store(store_id=store_id, recipient_email=to_addr)
+                run_reporting_for_store(store_id=store_id)
 
         except Exception:
             logger.exception("Scheduled worker iteration failed")

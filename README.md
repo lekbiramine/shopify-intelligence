@@ -198,6 +198,27 @@ Show only failures:
 python scripts\job_status.py --only-failed
 ```
 
+### Task workflow CLI (action tracking)
+
+List tasks for one store:
+
+```bash
+python scripts\tasks_cli.py list --shop-domain your-store.myshopify.com
+```
+
+Mark a task in progress or completed:
+
+```bash
+python scripts\tasks_cli.py mark --task-id 123 --status in_progress
+python scripts\tasks_cli.py mark --task-id 123 --status completed
+```
+
+Show task details and measured impact:
+
+```bash
+python scripts\tasks_cli.py show --task-id 123
+```
+
 ## Logs
 
 Logs are written to `logs/`:

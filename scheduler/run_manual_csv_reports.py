@@ -259,7 +259,7 @@ def main() -> None:
     logger.info("Starting manual CSV workflow for %s from %s", shop_domain, data_dir)
     store_id = _ensure_store(shop_domain, recipient_email)
     _run_manual_ingest(store_id, data_dir)
-    run_reporting_for_store(store_id=store_id, recipient_email=recipient_email)
+    run_reporting_for_store(store_id=store_id)
     logger.info("Manual CSV workflow completed successfully for %s", shop_domain)
 
 
