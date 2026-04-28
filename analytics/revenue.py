@@ -126,3 +126,44 @@ def get_order_volume_trend(store_id: int) -> dict:
     previous_7d = int(payload.get("previous_7d_orders") or 0)
     payload["delta_orders"] = current_7d - previous_7d
     return payload
+
+
+def get_revenue_trend_7d(store_id: int) -> dict:
+    """
+    Compares paid net revenue (total_price - total_discounts) in the last 7 days
+    vs the previous 7 days.
+    """
+    sql = """
+        SELECT
+            COALESCE(SUM(
+                CASE
+                    WHEN o.created_at >= NOW() - INTERVAL '7 days'
+                    THEN (o.total_price - o.total_discounts)
+                    ELSE 0
+                END
+            ), 0) AS current_7d_net_revenue,
+            COALESCE(SUM(
+                CASE
+                    WHEN o.created_at >= NOW() - INTERVAL '14 days'
+                     AND o.created_at < NOW() - INTERVAL '7 days'
+                    THEN (o.total_price - o.total_discounts)
+                    ELSE 0
+                END
+            ), 0) AS previous_7d_net_revenue
+        FROM orders o
+        WHERE o.store_id = %(store_id)s
+          AND o.financial_status = 'paid';
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, {"store_id": store_id})
+        result = cursor.fetchone()
+
+    payload = dict(result) if result else {}
+    current = float(payload.get("current_7d_net_revenue") or 0.0)
+    previous = float(payload.get("previous_7d_net_revenue") or 0.0)
+    payload["current_7d_net_revenue"] = current
+    payload["previous_7d_net_revenue"] = previous
+    payload["delta_net_revenue"] = current - previous
+    if previous > 0:
+        payload["delta_pct"] = (current - previous) / previous * 100.0
+    return payload

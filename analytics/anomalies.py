@@ -85,6 +85,9 @@ def get_abnormal_discount_orders(store_id: int) -> list[dict]:
 def get_products_with_no_sales(store_id: int) -> list[dict]:
     """
     Returns active products that have never appeared in any order.
+
+    Includes an approximate on-hand inventory value using variant price * available inventory.
+    This is not COGS; it's a liquidation/cash-tied approximation for decision-making.
     """
     sql = """
         SELECT
@@ -92,13 +95,20 @@ def get_products_with_no_sales(store_id: int) -> list[dict]:
             p.title AS product_title,
             p.vendor,
             p.product_type,
-            p.created_at
+            p.created_at,
+            COALESCE(SUM(i.available), 0) AS total_available,
+            COALESCE(AVG(NULLIF(v.price, 0)), 0) AS avg_variant_price,
+            COALESCE(SUM(i.available) * AVG(NULLIF(v.price, 0)), 0) AS est_on_hand_value
         FROM products p
         LEFT JOIN order_items oi ON oi.store_id = p.store_id AND oi.product_id = p.id
+        LEFT JOIN variants v ON v.store_id = p.store_id AND v.product_id = p.id
+        LEFT JOIN inventory i ON i.store_id = v.store_id AND i.variant_id = v.id
         WHERE p.store_id = %(store_id)s
         AND p.status = 'active'
         AND oi.id IS NULL
-        ORDER BY p.created_at DESC;
+        GROUP BY p.id, p.title, p.vendor, p.product_type, p.created_at
+        HAVING COALESCE(SUM(i.available), 0) > 0
+        ORDER BY est_on_hand_value DESC, p.created_at DESC;
     """
     with get_cursor() as cursor:
         cursor.execute(sql, {"store_id": store_id})

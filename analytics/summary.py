@@ -14,6 +14,7 @@ from analytics.revenue import (
     get_revenue_by_product,
     get_revenue_summary,
     get_order_volume_trend,
+    get_revenue_trend_7d,
 )
 from analytics.anomalies import (
     get_duplicate_orders,
@@ -51,7 +52,7 @@ def build_summary(store_id: int) -> dict:
             "summary": get_revenue_summary(store_id),
             "by_product": get_revenue_by_product(store_id),
             "high_return_rate": get_high_return_rate_products(store_id),
-            "trend": get_order_volume_trend(store_id),
+            "trend": {**get_order_volume_trend(store_id), **get_revenue_trend_7d(store_id)},
         },
         "anomalies": {
             "duplicate_orders": get_duplicate_orders(store_id),
