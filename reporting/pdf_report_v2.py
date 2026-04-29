@@ -32,7 +32,7 @@ _ENTITY_LABELS = {
     "churn_90d": "Churned Customers",
     "pause_sku": "High Return Product",
 }
-_PRIORITY_FORMULA = "Priority Score = Value + (Daily Loss x 7)"
+_PRIORITY_FORMULA = "Value + (Daily Loss x 7-day)"
 
 
 def _styles() -> dict[str, ParagraphStyle]:
@@ -167,6 +167,16 @@ def _safe_render_text(value: object, *, max_len: int = 180) -> str:
     if len(text) > max_len:
         text = text[: max_len - 3].rstrip() + "..."
     return text
+
+
+def _strip_weak_language(value: object) -> str:
+    text = _safe(value)
+    if not text:
+        return ""
+    text = re.sub(r"\blikely\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bmay\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bexpected to\b", "Target:", text, flags=re.IGNORECASE)
+    return " ".join(text.split()).strip(" ,.")
 
 
 def _soft_bullets(lines: list[str], max_items: int = 8) -> str:
@@ -538,7 +548,7 @@ def _build_action_payload(item: dict, summary: dict) -> dict[str, object]:
         context = f"{listed} customers are inactive for more than 90 days." if listed > 0 else ""
         target_orders = max(1, min(3, listed))
         execution = "Send a 10% win-back offer to customers inactive for 90+ days."
-        outcome = f"+{target_orders} reactivation orders (baseline 0 -> target {target_orders})" if listed > 0 else ""
+        outcome = f"+1-2 reactivation orders (baseline 0 -> target 1-2)" if listed > 0 else ""
         profile = _action_class(kind)
     elif kind == "return":
         items = _return_items(summary)
@@ -588,8 +598,8 @@ def _build_action_payload(item: dict, summary: dict) -> dict[str, object]:
         listed = len(items)
         title = "Clear dead inventory via discount and bundling"
         context = f"{listed} SKUs have inventory >0 and zero sales in the last 90 days." if listed > 0 else ""
-        execution = "Launch an automatic discount and bundle campaign for dead stock."
-        outcome = f"+{listed} SKUs with first sale (baseline 0 -> target {listed})" if listed > 0 else ""
+        execution = "Create automatic discount (15%) and bundle offer for listed SKUs."
+        outcome = "+1-2 SKUs with first sale (baseline 0 -> target 1-2)" if listed > 0 else ""
         profile = _action_class(kind)
     elif kind == "inventory":
         # Inventory insight defaults to out-of-stock taxonomy for strict separation.
@@ -621,6 +631,96 @@ def _build_action_payload(item: dict, summary: dict) -> dict[str, object]:
         "outcome": outcome,
         "profile": profile,
     }
+
+
+def _to_number(value: object) -> float | int:
+    iv = _to_int_optional(value)
+    if iv is not None and abs(float(iv) - _to_float(value)) < 0.000001:
+        return iv
+    return round(_to_float(value), 2)
+
+
+def _expected_result_struct(kind: str, payload: dict[str, object], summary: dict) -> dict[str, object]:
+    if kind == "churn":
+        return {"baseline": 0, "target_min": 1, "target_max": 2, "metric": "reactivation_orders"}
+    if kind == "return":
+        top = (summary.get("revenue", {}).get("high_return_rate", []) or [{}])[0]
+        baseline_rate = _to_float_optional(top.get("return_rate"))
+        if baseline_rate is None:
+            baseline_rate = 0.0
+        baseline_pct = round(baseline_rate * 100.0, 1)
+        return {
+            "baseline": baseline_pct,
+            "target_min": max(round(baseline_pct - 7.0, 1), 0.0),
+            "target_max": max(round(baseline_pct - 5.0, 1), 0.0),
+            "metric": "return_rate_pct",
+        }
+    if kind == "concentration":
+        concentration = _to_float_optional(_business_snapshot(summary).get("revenue_concentration"))
+        base = round(concentration or 0.0, 2)
+        return {"baseline": base, "target_min": max(base - 12.0, 0.0), "target_max": max(base - 8.0, 0.0), "metric": "top2_revenue_share_pct"}
+    if kind == "out_of_stock":
+        oos = len(summary.get("inventory", {}).get("out_of_stock", []) or [])
+        target_min = max(oos - 2, 0)
+        target_max = max(oos - 1, 0)
+        return {"baseline": oos, "target_min": target_min, "target_max": target_max, "metric": "out_of_stock_variants"}
+    if kind == "dead_inventory":
+        return {"baseline": 0, "target_min": 1, "target_max": 2, "metric": "first_sale_skus"}
+    return {"baseline": 0, "target_min": 0, "target_max": 0, "metric": "unknown"}
+
+
+def _action_id(kind: str, rank: int) -> str:
+    return f"{kind}-{rank}"
+
+
+def build_structured_actions(summary: dict, *, max_actions: int = 5) -> list[dict[str, object]]:
+    insights = list(summary.get("insights", []) or [])
+    ranked_actions = _rank_priority_actions(insights, max_actions=max_actions)
+    structured: list[dict[str, object]] = []
+    for idx, item in enumerate(ranked_actions, start=1):
+        kind = _action_kind(item)
+        payload = _build_action_payload(item, summary)
+        title = _safe(payload.get("title"))
+        context = _safe(payload.get("context"))
+        execution = _safe(payload.get("execution"))
+        targets = [t for t in (payload.get("items") or []) if _safe(t)]
+        if not title or not context or not execution or not targets:
+            continue
+        value = _to_float(payload.get("recoverable_value"))
+        daily_loss = _to_float(payload.get("daily_loss_value"))
+        priority_score = round(value + (daily_loss * 7.0), 2)
+        expected_result = _expected_result_struct(kind, payload, summary)
+        goal_line = (
+            f"Target: {expected_result.get('target_min')}-{expected_result.get('target_max')} "
+            f"{_safe(expected_result.get('metric')).replace('_', ' ')} in 7 days"
+        )
+        structured.append(
+            {
+                "id": _action_id(kind, idx),
+                "title": _strip_weak_language(title),
+                "value": round(value, 2),
+                "daily_loss": round(daily_loss, 2),
+                "priority_score": priority_score,
+                "rank": idx,
+                "context": _strip_weak_language(context),
+                "targets": targets,
+                "execute_command": _strip_weak_language(execution),
+                "goal": goal_line,
+                "measured_by": ["orders_7d", "revenue_7d"],
+                "impact_score_label": f"Impact Score: {int(round(priority_score, 0))} (Value + 7-day loss)",
+                "expected_result": {
+                    "baseline": _to_number(expected_result.get("baseline")),
+                    "target_min": _to_number(expected_result.get("target_min")),
+                    "target_max": _to_number(expected_result.get("target_max")),
+                    "metric": _safe(expected_result.get("metric")),
+                },
+            }
+        )
+    structured.sort(key=lambda x: (-_to_float(x.get("priority_score")), str(x.get("id"))))
+    for rank, action in enumerate(structured, start=1):
+        action["rank"] = rank
+        action["id"] = _action_id(_action_kind({"title": action.get("title")}), rank)
+    return structured
 
 
 def _financial_context_line(item: dict, exact_items: list[object]) -> str:
@@ -868,7 +968,29 @@ def _business_snapshot(summary: dict) -> dict:
         top2_revenue = sum(_to_float(c.get("total_spent")) for c in loyal[:2])
         if loyal_revenue > 0:
             concentration_risk = (top2_revenue / loyal_revenue * 100.0)
+    if inventory_risk is None:
+        inventory_risk = 0
+    concentration_risk = round(_to_float(concentration_risk), 2)
+    momentum = _render_revenue_trend_line(
+        {
+            "current_7d_net_revenue": current_7d_net,
+            "previous_7d_net_revenue": previous_7d_net,
+        }
+    )
+    rev_delta = _to_float(delta_net_pct)
+    if inventory_risk >= 20 or concentration_risk >= 70 or rev_delta <= -20:
+        status = "Critical"
+    elif inventory_risk >= 8 or concentration_risk >= 40 or rev_delta < 0:
+        status = "Warning"
+    else:
+        status = "Stable"
     return {
+        "store_status": status,
+        "revenue_momentum": momentum or "No revenue activity in the last 7 days",
+        "inventory_pressure": int(inventory_risk),
+        "revenue_concentration": concentration_risk,
+        "inventory_risk_count": int(inventory_risk),
+        "concentration_risk_pct": concentration_risk,
         "current_7d_orders": current_7d,
         "previous_7d_orders": previous_7d,
         "delta_orders": delta,
@@ -878,8 +1000,16 @@ def _business_snapshot(summary: dict) -> dict:
         "delta_7d_net_revenue": delta_net,
         "delta_7d_net_revenue_pct": delta_net_pct,
         "churn_risk_count": churn_risk,
-        "inventory_risk_count": inventory_risk,
-        "concentration_risk_pct": concentration_risk,
+    }
+
+
+def get_business_health_snapshot(summary: dict) -> dict[str, object]:
+    raw = _business_snapshot(summary)
+    return {
+        "store_status": raw.get("store_status", "Stable"),
+        "revenue_momentum": _safe(raw.get("revenue_momentum")),
+        "inventory_pressure": int(_to_int_optional(raw.get("inventory_pressure")) or 0),
+        "revenue_concentration": round(_to_float(raw.get("revenue_concentration")), 2),
     }
 
 
@@ -942,6 +1072,7 @@ def create_report_pdf(summary: dict, output_dir: str = "reports", task_sections:
     insights = list(summary.get("insights", []) or [])
     ranked_actions = _rank_priority_actions(insights, max_actions=5)
     totals = _financial_summary(ranked_actions)
+    structured_actions = build_structured_actions(summary, max_actions=5)
 
     story = [Paragraph("Store Intelligence Report", style["title"]), Paragraph(f"Generated {generated_at.strftime('%Y-%m-%d %H:%M UTC')}", style["meta"])]
 
@@ -963,37 +1094,41 @@ def create_report_pdf(summary: dict, output_dir: str = "reports", task_sections:
     _append_section_once("PRIORITY ACTIONS", "#7A271A")
     story.append(Spacer(1, 6))
 
-    def _render_action(item: dict, action_number: int) -> bool:
-        payload = _build_action_payload(item, summary)
-        required = ["title", "value_label", "daily_loss_label", "context", "execution", "outcome"]
-        if any(not _safe(payload.get(key)) for key in required):
-            return False
-        if not payload.get("items"):
-            return False
-
-        story.append(Paragraph(f"<b>ACTION #{action_number} — {_clean_sentence(payload['title']).rstrip('.')}</b>", style["action_title"]))
+    def _render_action(action: dict) -> bool:
+        story.append(Paragraph(f"<b>ACTION #{int(action['rank'])} — {_clean_sentence(action['title']).rstrip('.')}</b>", style["action_title"]))
         story.append(Spacer(1, 2))
-        story.append(Paragraph(f"<b>Value:</b> {payload['value_label']}", style["action_label"]))
-        story.append(Paragraph(f"<b>Daily Loss:</b> {payload['daily_loss_label']}", style["action_label"]))
+        story.append(Paragraph(f"<b>Value:</b> {_format_currency(_to_float(action['value']))} recoverable", style["action_label"]))
+        story.append(Paragraph(f"<b>Daily Loss:</b> {_format_currency(_to_float(action['daily_loss']))}/day", style["action_label"]))
+        story.append(Paragraph(f"<b>Impact Score:</b> {int(round(_to_float(action['priority_score']), 0))} (Value + 7-day loss)", style["action_label"]))
+        story.append(Paragraph(f"<b>Score Formula:</b> {_PRIORITY_FORMULA}", style["action_label"]))
         story.append(Spacer(1, 2))
-        if payload["context"]:
-            story.append(Paragraph(f"<b>Context:</b> {_clean_sentence(payload['context'])}", style["action_note"]))
-        if payload["items"]:
+        if action["context"]:
+            story.append(Paragraph(f"<b>Context:</b> {_clean_sentence(action['context'])}", style["action_note"]))
+        if action["targets"]:
             story.append(Paragraph("<b>Targets:</b>", style["action_label"]))
-            story.append(Paragraph(_soft_bullets(payload["items"], 4), style["muted"]))
-        if payload["execution"]:
+            story.append(Paragraph(_soft_bullets(action["targets"], 4), style["muted"]))
+        if action["execute_command"]:
             story.append(Paragraph("<b>EXECUTE:</b>", style["action_label"]))
-            story.append(Paragraph(_clean_sentence(payload["execution"]), style["action_note"]))
-        if payload["outcome"]:
+            story.append(Paragraph(_clean_sentence(action["execute_command"]), style["action_note"]))
+        story.append(Paragraph(f"<b>Goal:</b> {_clean_sentence(action['goal'])}", style["action_note"]))
+        story.append(Paragraph(f"<b>Measured by:</b> {', '.join(action['measured_by'])}", style["action_note"]))
+        er = action["expected_result"]
+        if er:
             story.append(Paragraph("<b>Expected Result:</b>", style["action_label"]))
-            story.append(Paragraph(_clean_sentence(payload["outcome"]), style["action_note"]))
+            story.append(
+                Paragraph(
+                    _clean_sentence(
+                        f"{er['metric']}: baseline {er['baseline']} -> target {er['target_min']}-{er['target_max']}"
+                    ),
+                    style["action_note"],
+                )
+            )
         story.append(Spacer(1, 12))
         return True
 
     rendered_actions = 0
-    for action_item in ranked_actions:
-        next_action_number = rendered_actions + 1
-        if _render_action(action_item, next_action_number):
+    for action in structured_actions:
+        if _render_action(action):
             rendered_actions += 1
     if rendered_actions == 0:
         story.append(Paragraph("No executable Shopify actions met the daily profit criteria.", style["muted"]))
@@ -1001,16 +1136,11 @@ def create_report_pdf(summary: dict, output_dir: str = "reports", task_sections:
     story.append(Spacer(1, 12))
     _append_section_once("BUSINESS HEALTH SNAPSHOT", "#1D2939")
     story.append(Spacer(1, 6))
-    momentum = _render_revenue_trend_line(snapshot) or f"{_format_currency(0)} vs {_format_currency(0)} (flat 0.00%)"
-    inventory_pressure = _to_int_optional(snapshot.get("inventory_risk_count")) or 0
-    concentration = _to_float_optional(snapshot.get("concentration_risk_pct")) or 0.0
-    status = _business_health_status(snapshot)
-    story.append(Paragraph(f"Store Status: {status}", style["body"]))
-    story.append(Paragraph("Status Guide: Healthy = no major risk signals; Needs monitoring = early warning signs; Needs immediate attention = multiple major risk signals at once.", style["body"]))
-    story.append(Paragraph(f"Revenue Momentum: {momentum}", style["body"]))
-    story.append(Paragraph(f"Inventory Pressure: {inventory_pressure} flagged variants", style["body"]))
-    story.append(Paragraph(f"Revenue Concentration: {concentration:.2f}% top-2 loyal customer share", style["body"]))
-    story.append(Paragraph(f"Risk Summary: {_risk_summary_line(snapshot)}", style["body"]))
+    health = get_business_health_snapshot(summary)
+    story.append(Paragraph(f"Store Status: {health['store_status']}", style["body"]))
+    story.append(Paragraph(f"Revenue Momentum: {health['revenue_momentum']}", style["body"]))
+    story.append(Paragraph(f"Inventory Pressure: {int(health['inventory_pressure'])}", style["body"]))
+    story.append(Paragraph(f"Revenue Concentration: {float(health['revenue_concentration']):.2f}", style["body"]))
 
     story.append(Spacer(1, 12))
     _append_section_once("EXECUTION ORDER", "#101828")

@@ -9,6 +9,31 @@ def get_email_subject() -> str:
     return f"Store Intelligence Report — {today}"
 
 
+def get_action_email_subject(top_action_daily_loss: float) -> str:
+    return f"Today: Fix 1 issue losing ${float(top_action_daily_loss):,.2f}/day"
+
+
+def build_action_email_body(*, daily_loss: float, top_action: dict, dashboard_url: str) -> str:
+    action_title = str(top_action.get("title") or "").strip()
+    context = str(top_action.get("context") or "").strip()
+    why = context[:180].strip() or "Measured issue requires immediate execution."
+    expected_result = (top_action.get("expected_result") or {})
+    target_min = expected_result.get("target_min", 0)
+    target_max = expected_result.get("target_max", 0)
+    lines = [
+        f"You're currently losing ${float(daily_loss):,.2f}/day from 1 critical issue.",
+        "",
+        f"Action #1: {action_title}",
+        "",
+        why,
+        "",
+        f"Target: +{int(target_min)}-{int(target_max)} orders in 7 days",
+        "",
+        f"View full action plan -> {dashboard_url}",
+    ]
+    return "\n".join(lines)
+
+
 def wrap_email_body(report_body: str) -> str:
     """
     Wraps the plain text report in a clean email template.

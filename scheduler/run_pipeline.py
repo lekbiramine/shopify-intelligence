@@ -24,9 +24,9 @@ from etl.load import (
     load_inventory,
 )
 from analytics.summary import build_summary
-from reporting.templates import get_email_subject
+from reporting.templates import build_action_email_body, get_action_email_subject, get_email_subject
 from reporting.email_sender import send_store_report_email
-from reporting.pdf_report_v2 import create_report_pdf
+from reporting.pdf_report_v2 import build_structured_actions, create_report_pdf
 from tasks.engine import (
     auto_verify_tasks_from_summary,
     build_report_task_sections,
@@ -191,23 +191,23 @@ def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
     sync_tasks_from_summary(store_id, summary)
     auto_verify_tasks_from_summary(store_id, summary)
     evaluate_completed_task_impacts(store_id, summary)
-    reminders = collect_due_reminders(store_id)
+    collect_due_reminders(store_id)
     task_sections = build_report_task_sections(store_id, summary)
     pdf_path = create_report_pdf(summary, output_dir=f"reports/{store_id}", task_sections=task_sections, store_id=store_id)
+    actions = build_structured_actions(summary, max_actions=5)
     recipient_email = get_store_contact_email_by_id(store_id) or ""
     _assert_store_report_delivery_scope(store_id=store_id, report_path=pdf_path, recipient_email=recipient_email)
-    subject = get_email_subject()
-    reminder_lines = []
-    for task in reminders[:5]:
-        reminder_lines.append(f"- [{task.get('status')}] {task.get('title')} (impact ${float(task.get('expected_impact') or 0):,.2f})")
-    reminder_block = ""
-    if reminder_lines:
-        reminder_block = "\n\nTask reminders:\n" + "\n".join(reminder_lines)
-    email_body = (
-        "Your daily Store Intelligence report is attached as a PDF.\n\n"
-        f"Attachment: {pdf_path}"
-        f"{reminder_block}"
-    )
+    if actions:
+        top_action = actions[0]
+        subject = get_action_email_subject(float(top_action.get("daily_loss") or 0.0))
+        email_body = build_action_email_body(
+            daily_loss=float(top_action.get("daily_loss") or 0.0),
+            top_action=top_action,
+            dashboard_url=f"http://localhost:5173/dashboard?store_id={store_id}",
+        )
+    else:
+        subject = get_email_subject()
+        email_body = "No executable action for today.\nOpen dashboard: http://localhost:5173/dashboard"
     recipient = send_store_report_email(store_id=store_id, subject=subject, body=email_body, attachment_path=pdf_path)
     create_report_record(store_id=store_id, report_path=pdf_path, recipient_email=recipient)
 

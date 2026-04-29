@@ -1,0 +1,36 @@
+{
+  "completed_actions": [
+    {
+      "action_id": "action_2",
+      "title": "Pause ads for high-return product (Test Shoes)",
+      "timestamp_started": "2026-04-29T19:29:25.090828+00:00",
+      "timestamp_completed": "2026-04-29T19:33:56.153134+00:00",
+      "baseline_metrics": {
+        "orders_7d": 0.0,
+        "revenue_7d": 0.0
+      },
+      "value": 20.0,
+      "daily_loss": 2.86
+    },
+    {
+      "action_id": "action_1",
+      "title": "Clear dead inventory via discount and bundling",
+      "timestamp_started": "2026-04-29T19:29:25.090800+00:00",
+      "timestamp_completed": "2026-04-29T19:34:03.582358+00:00",
+      "baseline_metrics": {
+        "orders_7d": 0.0,
+        "revenue_7d": 0.0
+      },
+      "value": 159.92,
+      "daily_loss": 11.42
+    }
+  ],
+  "action_lifecycle": {
+    "action_1": {
+      "timestamp_started": "2026-04-29T19:29:25.090800+00:00"
+    },
+    "action_2": {
+      "timestamp_started": "2026-04-29T19:29:25.090828+00:00"
+    }
+  }
+}
