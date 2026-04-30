@@ -8,7 +8,9 @@ import re
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.pdfgen.canvas import Canvas
+from reportlab.lib.units import inch
 
 from config.logging_config import get_logger
 
@@ -38,15 +40,64 @@ _PRIORITY_FORMULA = "Value + (Daily Loss x 7-day)"
 def _styles() -> dict[str, ParagraphStyle]:
     base = getSampleStyleSheet()
     return {
-        "title": ParagraphStyle("TitleCustom", parent=base["Title"], fontSize=20, leading=24, textColor=colors.HexColor("#0B1220"), spaceAfter=6),
-        "meta": ParagraphStyle("Meta", parent=base["Normal"], fontSize=9, textColor=colors.HexColor("#667085"), spaceAfter=14),
-        "section_text": ParagraphStyle("SectionText", parent=base["Normal"], fontSize=10, leading=12, textColor=colors.white, alignment=0),
-        "body": ParagraphStyle("Body", parent=base["Normal"], fontSize=10, leading=15, textColor=colors.HexColor("#111827")),
-        "muted": ParagraphStyle("Muted", parent=base["Normal"], fontSize=9.2, leading=13, textColor=colors.HexColor("#475467")),
-        "action_title": ParagraphStyle("ActionTitle", parent=base["Normal"], fontSize=10.5, leading=15, textColor=colors.HexColor("#101828"), spaceAfter=2),
+        "title": ParagraphStyle(
+            "TitleCustom",
+            parent=base["Title"],
+            fontSize=27,
+            leading=31,
+            textColor=colors.HexColor("#0F172A"),
+            spaceAfter=2,
+        ),
+        "h1": ParagraphStyle("H1", parent=base["Title"], fontSize=24, leading=28, textColor=colors.HexColor("#FFFFFF"), spaceAfter=4),
+        "h2": ParagraphStyle("H2", parent=base["Normal"], fontSize=13, leading=16, textColor=colors.HexColor("#0F172A"), spaceAfter=3),
+        "h3": ParagraphStyle("H3", parent=base["Normal"], fontSize=12.8, leading=16.2, textColor=colors.HexColor("#0F172A"), spaceAfter=2),
+        "subtitle": ParagraphStyle(
+            "Subtitle",
+            parent=base["Normal"],
+            fontSize=12,
+            leading=16,
+            textColor=colors.HexColor("#475569"),
+            spaceAfter=8,
+        ),
+        "meta": ParagraphStyle("Meta", parent=base["Normal"], fontSize=9.0, textColor=colors.HexColor("#94A3B8"), spaceAfter=8),
+        "section_text": ParagraphStyle("SectionText", parent=base["Normal"], fontSize=10, leading=12, textColor=colors.HexColor("#0F172A"), alignment=0),
+        "body": ParagraphStyle("Body", parent=base["Normal"], fontSize=10.3, leading=14.6, textColor=colors.HexColor("#0F172A")),
+        "muted": ParagraphStyle("Muted", parent=base["Normal"], fontSize=9.2, leading=12.8, textColor=colors.HexColor("#64748B")),
+        "small": ParagraphStyle("Small", parent=base["Normal"], fontSize=8.6, leading=11.4, textColor=colors.HexColor("#64748B")),
+        "action_title": ParagraphStyle("ActionTitle", parent=base["Normal"], fontSize=12.6, leading=16.8, textColor=colors.HexColor("#0F172A"), spaceAfter=2),
+        "action_title_secondary": ParagraphStyle(
+            "ActionTitleSecondary",
+            parent=base["Normal"],
+            fontSize=11.0,
+            leading=14.0,
+            textColor=colors.HexColor("#1E293B"),
+            spaceAfter=2,
+        ),
         "action_meta": ParagraphStyle("ActionMeta", parent=base["Normal"], fontSize=9.2, leading=13, textColor=colors.HexColor("#344054"), spaceAfter=2),
-        "action_note": ParagraphStyle("ActionNote", parent=base["Normal"], fontSize=9, leading=12, textColor=colors.HexColor("#667085"), spaceAfter=2),
-        "action_label": ParagraphStyle("ActionLabel", parent=base["Normal"], fontSize=9.2, leading=12, textColor=colors.HexColor("#344054"), spaceAfter=1),
+        "action_note": ParagraphStyle("ActionNote", parent=base["Normal"], fontSize=9.6, leading=13.2, textColor=colors.HexColor("#334155"), spaceAfter=2),
+        "action_label": ParagraphStyle("ActionLabel", parent=base["Normal"], fontSize=9.4, leading=12.6, textColor=colors.HexColor("#1E293B"), spaceAfter=1),
+        "metric_value": ParagraphStyle("MetricValue", parent=base["Normal"], fontSize=17, leading=20, textColor=colors.HexColor("#0F172A"), spaceAfter=1),
+        "metric_label": ParagraphStyle("MetricLabel", parent=base["Normal"], fontSize=8.8, leading=11.2, textColor=colors.HexColor("#6B7280"), spaceAfter=0),
+        "chip": ParagraphStyle("Chip", parent=base["Normal"], fontSize=8.8, leading=11, textColor=colors.HexColor("#0F172A")),
+        "chip_inverse": ParagraphStyle("ChipInverse", parent=base["Normal"], fontSize=8.8, leading=11, textColor=colors.white),
+        "kpi_value": ParagraphStyle("KpiValue", parent=base["Normal"], fontSize=14, leading=16, textColor=colors.HexColor("#111827")),
+    }
+
+
+def _theme() -> dict[str, str]:
+    # Minimal premium palette inspired by modern SaaS dashboards.
+    return {
+        "bg": "#FFFFFF",
+        "text": "#0F172A",
+        "muted": "#64748B",
+        "border": "#E5E7EB",
+        "surface": "#FAFAFA",
+        "surface_2": "#F4F4F5",
+        "accent": "#111827",
+        "accent_2": "#374151",
+        "warning": "#F59E0B",
+        "danger": "#EF4444",
+        "info": "#6B7280",
     }
 
 
@@ -181,6 +232,14 @@ def _strip_weak_language(value: object) -> str:
 
 def _soft_bullets(lines: list[str], max_items: int = 8) -> str:
     cleaned = ["• " + _safe(x) for x in (lines or []) if _safe(x)]
+    if not cleaned:
+        return ""
+    return "<br/>".join(cleaned[:max_items])
+
+
+def _checkbox_steps(lines: list[str], max_items: int = 10) -> str:
+    # Use ASCII so PDF text extraction remains readable across platforms.
+    cleaned = ["[ ] " + _safe(x) for x in (lines or []) if _safe(x)]
     if not cleaned:
         return ""
     return "<br/>".join(cleaned[:max_items])
@@ -830,8 +889,19 @@ def _business_label(raw_value: object) -> str:
 
 
 def _section_header(text: str, style: dict[str, ParagraphStyle], bg_color: str = "#0f172a") -> Table:
-    table = Table([[Paragraph(f"<b>{_safe(text)}</b>", style["section_text"])]], colWidths=[515])
-    table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg_color)), ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    table = Table([[Paragraph(f"<b>{_safe(text)}</b>", style["chip_inverse"])]], colWidths=[515])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg_color)),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor(bg_color)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]
+        )
+    )
     return table
 
 
@@ -1061,93 +1131,431 @@ def _risk_summary_line(snapshot: dict) -> str:
     return "Risk is contained across revenue concentration and inventory exposure."
 
 
-def create_report_pdf(summary: dict, output_dir: str = "reports", task_sections: dict | None = None, *, store_id: int) -> str:
+def create_report_pdf(report_data: dict, output_dir: str = "reports", task_sections: dict | None = None, *, store_id: int) -> str:
+    del task_sections  # legacy param kept for compatibility; not used.
     style = _styles()
     generated_at = datetime.now(timezone.utc)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"store-intelligence-store-{store_id}-{generated_at.strftime('%Y%m%d-%H%M%S')}.pdf"
 
-    snapshot = _business_snapshot(summary)
-    insights = list(summary.get("insights", []) or [])
-    ranked_actions = _rank_priority_actions(insights, max_actions=5)
-    totals = _financial_summary(ranked_actions)
-    structured_actions = build_structured_actions(summary, max_actions=5)
+    headline = report_data.get("headline") or {}
+    status = report_data.get("status") or {}
+    execution_required = report_data.get("execution_required") or {}
+    main_cause = str(report_data.get("main_cause") or "").strip()
+    inaction_risk = report_data.get("inaction_risk") or {}
+    daily_comparison = report_data.get("daily_comparison") or {}
+    baseline_mode = bool(daily_comparison.get("baseline_mode"))
+    trend_state = str(report_data.get("trend_state") or "stable").strip().upper()
+    daily_insight = report_data.get("daily_insight") or {}
+    continuity_memory = str(report_data.get("continuity_memory") or "").strip()
+    execution_instruction = report_data.get("execution_instruction") or {}
+    actions = list(report_data.get("actions") or [])
+    system_impact = report_data.get("system_impact") or {}
+    risk = report_data.get("risk") or {}
+    generated_text = str(report_data.get("generated_at") or generated_at.isoformat())
+    _PANEL_WIDTH = 520
 
-    story = [Paragraph("Store Intelligence Report", style["title"]), Paragraph(f"Generated {generated_at.strftime('%Y-%m-%d %H:%M UTC')}", style["meta"])]
-
-    rendered_sections: set[str] = set()
-
-    def _append_section_once(section_title: str, color: str) -> bool:
-        if section_title in rendered_sections:
-            return False
-        rendered_sections.add(section_title)
-        story.append(_section_header(section_title, style, color))
-        return True
-
-    _append_section_once("EXECUTIVE SUMMARY", "#101828")
-    story.append(Spacer(1, 6))
-    story.append(Paragraph(f"Total Recoverable Revenue: {_format_currency(totals['recoverable'])}", style["body"]))
-    story.append(Paragraph(f"Total Risk Exposure: {_format_currency(totals['risk'])}", style["body"]))
-
-    story.append(Spacer(1, 12))
-    _append_section_once("PRIORITY ACTIONS", "#7A271A")
-    story.append(Spacer(1, 6))
-
-    def _render_action(action: dict) -> bool:
-        story.append(Paragraph(f"<b>ACTION #{int(action['rank'])} — {_clean_sentence(action['title']).rstrip('.')}</b>", style["action_title"]))
-        story.append(Spacer(1, 2))
-        story.append(Paragraph(f"<b>Value:</b> {_format_currency(_to_float(action['value']))} recoverable", style["action_label"]))
-        story.append(Paragraph(f"<b>Daily Loss:</b> {_format_currency(_to_float(action['daily_loss']))}/day", style["action_label"]))
-        story.append(Paragraph(f"<b>Impact Score:</b> {int(round(_to_float(action['priority_score']), 0))} (Value + 7-day loss)", style["action_label"]))
-        story.append(Paragraph(f"<b>Score Formula:</b> {_PRIORITY_FORMULA}", style["action_label"]))
-        story.append(Spacer(1, 2))
-        if action["context"]:
-            story.append(Paragraph(f"<b>Context:</b> {_clean_sentence(action['context'])}", style["action_note"]))
-        if action["targets"]:
-            story.append(Paragraph("<b>Targets:</b>", style["action_label"]))
-            story.append(Paragraph(_soft_bullets(action["targets"], 4), style["muted"]))
-        if action["execute_command"]:
-            story.append(Paragraph("<b>EXECUTE:</b>", style["action_label"]))
-            story.append(Paragraph(_clean_sentence(action["execute_command"]), style["action_note"]))
-        story.append(Paragraph(f"<b>Goal:</b> {_clean_sentence(action['goal'])}", style["action_note"]))
-        story.append(Paragraph(f"<b>Measured by:</b> {', '.join(action['measured_by'])}", style["action_note"]))
-        er = action["expected_result"]
-        if er:
-            story.append(Paragraph("<b>Expected Result:</b>", style["action_label"]))
-            story.append(
-                Paragraph(
-                    _clean_sentence(
-                        f"{er['metric']}: baseline {er['baseline']} -> target {er['target_min']}-{er['target_max']}"
-                    ),
-                    style["action_note"],
-                )
+    def _panel(rows: list[list[object]], *, bg: str = "#FFFFFF", border: str = "#E2E8F0", pad: int = 10) -> Table:
+        table = Table(rows, colWidths=[_PANEL_WIDTH])
+        table.hAlign = "LEFT"
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg)),
+                    ("BOX", (0, 0), (-1, -1), 0.9, colors.HexColor(border)),
+                    ("LEFTPADDING", (0, 0), (-1, -1), pad),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), pad),
+                    ("TOPPADDING", (0, 0), (-1, -1), 7),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ]
             )
-        story.append(Spacer(1, 12))
-        return True
+        )
+        return table
 
-    rendered_actions = 0
-    for action in structured_actions:
-        if _render_action(action):
-            rendered_actions += 1
-    if rendered_actions == 0:
-        story.append(Paragraph("No executable Shopify actions met the daily profit criteria.", style["muted"]))
+    def _chip(text: str, *, bg: str, fg: str = "#0F172A", border: str | None = None) -> Table:
+        tbl = Table([[Paragraph(f"<b>{_safe(text)}</b>", style["chip"] if fg != "#FFFFFF" else style["chip_inverse"])]])
+        tbl.hAlign = "LEFT"
+        tbl.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg)),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor(fg)),
+                    *([("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor(border))] if border else []),
+                ]
+            )
+        )
+        return tbl
 
-    story.append(Spacer(1, 12))
-    _append_section_once("BUSINESS HEALTH SNAPSHOT", "#1D2939")
-    story.append(Spacer(1, 6))
-    health = get_business_health_snapshot(summary)
-    story.append(Paragraph(f"Store Status: {health['store_status']}", style["body"]))
-    story.append(Paragraph(f"Revenue Momentum: {health['revenue_momentum']}", style["body"]))
-    story.append(Paragraph(f"Inventory Pressure: {int(health['inventory_pressure'])}", style["body"]))
-    story.append(Paragraph(f"Revenue Concentration: {float(health['revenue_concentration']):.2f}", style["body"]))
+    def _kpi_card(label: str, value: str, *, accent: str, note: str = "") -> Table:
+        rows: list[list[object]] = [
+            [Paragraph(f"<b>{_safe(label)}</b>", style["small"])],
+            [Paragraph(_safe(value), style["kpi_value"])],
+        ]
+        if _safe(note):
+            rows.append([Paragraph(_safe(note), style["muted"])])
+        card = Table(rows, colWidths=[165])
+        card.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFFFFF")),
+                    ("BOX", (0, 0), (-1, -1), 1.0, colors.HexColor("#E2E8F0")),
+                    ("LINEBEFORE", (0, 0), (0, -1), 5.0, colors.HexColor(accent)),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("TOPPADDING", (0, 0), (-1, -1), 9),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+                ]
+            )
+        )
+        return card
 
-    story.append(Spacer(1, 12))
-    _append_section_once("EXECUTION ORDER", "#101828")
-    story.append(Spacer(1, 6))
-    story.append(Paragraph("Actions are already sorted by business impact. Execute them in numeric order: Action #1, then #2, then #3.", style["body"]))
+    def _kpi_row(cards: list[Table]) -> Table:
+        tbl = Table([cards], colWidths=[173, 173, 173])
+        tbl.hAlign = "LEFT"
+        tbl.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        return tbl
 
-    doc = SimpleDocTemplate(str(output_path), pagesize=LETTER, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=40, title="Store Intelligence Report", author="Shopify Automation Pipeline")
-    doc.build(story)
+    def _metric_card(value: str, label: str) -> Table:
+        card = Table(
+            [
+                [Paragraph(f"<b>{_safe(value)}</b>", style["metric_value"])],
+                [Paragraph(_safe(label), style["metric_label"])],
+            ],
+            colWidths=[166],
+        )
+        card.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFFFFF")),
+                    ("BOX", (0, 0), (-1, -1), 0.9, colors.HexColor("#E5E7EB")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+        return card
+
+    def _metric_triplet_row(items: list[tuple[str, str]], *, width: int = 166) -> Table:
+        cards = [_metric_card(v, l) for v, l in items[:3]]
+        while len(cards) < 3:
+            cards.append(_metric_card("-", ""))
+        row = Table([[cards[0], cards[1], cards[2]]], colWidths=[width, width, width], hAlign="LEFT")
+        row.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        return row
+
+    def _executive_primary_driver(raw: object) -> str:
+        text = _safe(raw).replace("ROOT CAUSE IDENTIFIED:", "").strip()
+        lowered = text.lower()
+        if lowered == "inventory imbalance":
+            return "Inventory imbalance (excess stock with no sales activity)"
+        return text or "Operations"
+
+    def _two_col_metrics(left: str, right: str, *, total_width: int = _PANEL_WIDTH) -> Table:
+        half = int(total_width / 2)
+        table = Table(
+            [[Paragraph(left, style["action_label"]), Paragraph(right, style["action_label"])]],
+            colWidths=[half, total_width - half],
+        )
+        table.hAlign = "LEFT"
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                    ("LINEBELOW", (0, 0), (-1, -1), 0.6, colors.HexColor("#EEF2F6")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        return table
+
+    def _static_execution_from_step(step: str, *, system_hint: str = "") -> str:
+        """
+        Presentation-only: convert internal step strings into a compact, non-deceptive instruction.
+        Example:
+          "Shopify → Products → Discounts → Create 15% discount ..."
+        ->
+          "Shopify → Discounts: Create 15% discount ..."
+        """
+        raw = _safe(step)
+        raw = re.sub(r"^\[\s*\]\s*", "", raw).strip()
+        parts = [p.strip() for p in raw.split("→") if p.strip()]
+        if not parts:
+            return raw
+        system = system_hint.strip() or parts[0]
+        entry = parts[-2] if len(parts) >= 2 else ""
+        instruction = parts[-1] if parts else raw
+        lowered = raw.lower()
+        if system.lower() == "shopify" and "discount" in lowered and ("15%" in lowered or "15 percent" in lowered):
+            return "Create 15% automatic discount (Shopify Admin → Products → Discounts → Create discount)"
+        if system.lower() == "shopify" and "update description" in lowered:
+            return "Update product description for fit, sizing, and materials (Shopify Admin → Products → Test Shoes → Edit product → Update description)"
+        if entry and entry.lower() != system.lower():
+            return f"{instruction} ({system} → {entry})"
+        return f"{instruction} ({system})"
+
+    palette = _theme()
+    ranked_actions = sorted(
+        list(actions or []),
+        key=lambda a: (_to_float(a.get("value")) + (_to_float(a.get("daily_loss")) * 7.0)),
+        reverse=True,
+    )
+    primary_actions = ranked_actions[:2]
+    secondary_actions = ranked_actions[2:]
+    actions = primary_actions
+    total_daily_loss = sum(_to_float(a.get("daily_loss")) for a in ranked_actions) if isinstance(ranked_actions, list) else 0.0
+    recoverable_7d = sum(_to_float(a.get("value")) for a in ranked_actions) if isinstance(ranked_actions, list) else 0.0
+    risk_7d = _to_float(risk.get("weekly_loss_projection")) if risk else (total_daily_loss * 7.0)
+    before_after = list(report_data.get("before_after_comparison") or [])
+    proof_by_action = {str(row.get("action_id") or ""): row for row in before_after if isinstance(row, dict)}
+
+    store_status = str(report_data.get("store_status") or "").strip()
+    status_level_txt = str(status.get("level") or "").strip().lower()
+    if not store_status:
+        if "leak" in status_level_txt or total_daily_loss >= 20:
+            store_status = "Critical"
+        elif total_daily_loss > 0:
+            store_status = "Warning"
+        else:
+            store_status = "Stable"
+
+    status_color = palette["accent"]
+    if "critical" in store_status.lower() or "leak" in status_level_txt:
+        status_color = palette["danger"]
+    elif "warning" in store_status.lower() or "attention" in store_status.lower():
+        status_color = palette["warning"]
+
+    net_diff = recoverable_7d + risk_7d
+    story = [
+        _panel(
+            [
+                [Paragraph("STORE INTELLIGENCE - EXECUTIVE BRIEF", style["h1"])],
+                [[_chip(f"Status: {store_status}", bg=status_color, fg="#FFFFFF")]],
+                [Paragraph(f"<font color='#94A3B8'>Generated: {_safe(generated_text)}</font>", style["meta"])],
+            ],
+            bg="#0B0F17",
+            border="#1F2937",
+            pad=13,
+        ),
+        Spacer(1, 8),
+        _section_header("━━━━━━━━━━━━━━━━━━━━━━ EXECUTIVE SUMMARY ━━━━━━━━━━━━━━━━━━━━━━", style, palette["accent_2"]),
+        Spacer(1, 6),
+        Paragraph("▌ FINANCIAL SNAPSHOT", style["action_label"]),
+        Spacer(1, 6),
+        _metric_triplet_row(
+            [
+                (_format_currency(total_daily_loss) + "/day", "Daily impact"),
+                (_format_currency(recoverable_7d), "Total value"),
+                (_format_currency(risk_7d), "7-day projection"),
+            ],
+            width=166,
+        ),
+        Spacer(1, 6),
+        _panel(
+            [[Paragraph(f"<b>Root cause:</b> {(main_cause or 'Operational revenue leak').upper()}", style["action_note"])]],
+            bg="#F8FAFC",
+            border="#E5E7EB",
+            pad=10,
+        ),
+        Spacer(1, 8),
+        Paragraph("▌ TOP ACTIONS", style["action_label"]),
+        Spacer(1, 6),
+        _panel(
+            [
+                [Paragraph(f"Execute top actions: projected recovery up to {_format_currency(recoverable_7d)}.", style["action_note"])],
+                [Paragraph(f"No execution: projected downside near {_format_currency(risk_7d)} over 7 days.", style["action_note"])],
+                [Paragraph(f"Summary delta (7d): {_format_currency(net_diff)}", style["action_note"])],
+            ],
+            bg="#FFFBEB",
+            border="#FBBF24",
+            pad=10,
+        ),
+        Spacer(1, 6),
+        _panel(
+            [
+                [Paragraph("▌ SYSTEM NOTES", style["action_label"])],
+                [Paragraph(f"Observed impact trend: {_format_currency(total_daily_loss)}/day currently unresolved.", style["muted"])],
+                [Paragraph("Execution signal: no confirmed corrective completion recorded in this cycle.", style["muted"])],
+            ],
+            bg="#F8FAFC",
+            border="#E5E7EB",
+            pad=10,
+        ),
+        Spacer(1, 8),
+        _section_header("━━━━━━━━━━━━━━━━━━━━━━ ACTION CARDS ━━━━━━━━━━━━━━━━━━━━━━", style, palette["accent_2"]),
+        Spacer(1, 6),
+    ]
+
+    for idx, action in enumerate(actions, start=1):
+        execution = action.get("execution") or {}
+        risk_if_ignored = action.get("risk_if_ignored") or {}
+        targets = [str(t).strip() for t in (action.get("targets") or []) if str(t).strip()][:2]
+        systems = list(action.get("systems") or [])
+        if idx == 1:
+            action_band = "CRITICAL - PRIMARY LEAK"
+            chip_bg = "#DC2626"
+        elif idx == 2:
+            action_band = "HIGH IMPACT - SECONDARY LEAK"
+            chip_bg = "#B45309"
+        else:
+            action_band = "SECONDARY - OPTIMIZATION"
+            chip_bg = "#374151"
+        header_left = _chip(action_band, bg=chip_bg, fg="#FFFFFF")
+        header_right = _chip(f"{_format_currency(_to_float(action.get('daily_loss')))}/day", bg="#0F172A", fg="#FFFFFF")
+        action_pad = 12
+        action_content_w = _PANEL_WIDTH - (2 * action_pad)
+        exec_line = ""
+        for sys in systems:
+            sys_name = _safe((sys or {}).get("system"))
+            steps = list((sys or {}).get("steps") or [])
+            if sys_name and steps:
+                exec_line = _static_execution_from_step(str(steps[0]), system_hint=sys_name)
+                break
+        if not exec_line:
+            primary = _safe(execution.get("primary"))
+            exec_line = primary if primary else "(not available)"
+
+        action_title = _safe(action.get("title")) or "Action"
+        title_clean = action_title.upper().replace(f" ({_format_currency(_to_float(action.get('daily_loss')))}/DAY)", "")
+        action_id = _safe(action.get("id"))
+        proof = proof_by_action.get(action_id, {})
+        proof_status = _safe(proof.get("status")).lower()
+        if proof_status == "validated":
+            execution_status = "confirmed"
+        elif proof_status in {"completed", "executed", "in_progress"}:
+            execution_status = "executed"
+        else:
+            execution_status = "pending"
+        action_type = _safe(action.get("type")) or "general"
+        action_target = _safe((targets[0] if targets else action.get("title"))) or "store segment"
+        cta_label = f"Execute {action_type.replace('_', ' ')} action"
+        card_bg = "#FFFFFF" if idx == 1 else "#FCFCFD"
+        card_border = "#D0D5DD" if idx == 1 else palette["border"]
+        decision_controls = "Execute now | Snooze 24h | Ignore cycle"
+        action_spec = f"{{id: {action_id}, type: {action_type}, target: {action_target}}}"
+        execution_intent = f"{{status: {execution_status}, cta: {cta_label}}}"
+        action_card = _panel(
+            [
+                [
+                    Table(
+                        [[header_left, header_right]],
+                        colWidths=[int(action_content_w / 2), action_content_w - int(action_content_w / 2)],
+                        hAlign="LEFT",
+                    ),
+                ],
+                [Paragraph(f"▌ ACTION CARD #{idx}", style["action_label"])],
+                [Paragraph(f"<b>{title_clean}</b>", style["h3"])],
+                [Paragraph(f"<b>IMPACT:</b> {_format_currency(_to_float(action.get('daily_loss')))}/day", style["action_note"])],
+                [Paragraph(f"<b>VALUE:</b> {_format_currency(_to_float(action.get('value')))}", style["action_note"])],
+                [Paragraph(f"<b>ACTION SPEC:</b> {action_spec}", style["action_note"])],
+                [Paragraph(f"<b>EXECUTION:</b> {exec_line}", style["action_note"])],
+                [Paragraph(f"<b>EXECUTION INTENT:</b> {execution_intent}", style["small"])],
+                [Paragraph(f"<b>RISK</b>  -{_format_currency(_to_float(action.get('daily_loss')) * 7.0)} projected 7-day loss", style["action_note"])],
+                [Paragraph(f"<b>DECISION CONTROLS:</b> {decision_controls}", style["small"])],
+            ],
+            bg=card_bg,
+            border=card_border,
+            pad=action_pad,
+        )
+        story.append(action_card)
+        story.append(Spacer(1, 6))
+
+    if secondary_actions:
+        secondary_lines = [f"• {_safe(a.get('title'))} ({_format_currency(_to_float(a.get('daily_loss')))}/day)" for a in secondary_actions[:4]]
+        story.extend(
+            [
+                Paragraph("▌ SECONDARY INSIGHTS", style["action_label"]),
+                _panel([[Paragraph("<br/>".join(secondary_lines), style["muted"])]], bg="#F8FAFC", border="#E5E7EB", pad=10),
+                Spacer(1, 6),
+            ]
+        )
+
+    story.extend(
+        [
+            _section_header("━━━━━━━━━━━━━━━━━━━━━━ IMPACT ━━━━━━━━━━━━━━━━━━━━━━", style, "#0F172A"),
+            _panel(
+                [
+                    [Paragraph(f"• <b>{_format_currency(_to_float(system_impact.get('total_revenue_recovered_7d')))}</b> recovered", style["action_note"])],
+                    [Paragraph(f"• <b>{_format_currency(_to_float(system_impact.get('total_loss_prevented_7d')))}</b> loss prevented", style["action_note"])],
+                ],
+                bg="#F8FAFC",
+                border="#E5E7EB",
+            ),
+            Spacer(1, 4),
+            _panel([[Paragraph(f"No-action outcome: {_format_currency(total_daily_loss)}/day loss continues.", style["action_note"])]], bg="#FEF2F2", border="#FCA5A5"),
+            Spacer(1, 4),
+            _panel([[Paragraph("STATUS: LOSS ACTIVE — NO CORRECTIVE ACTION EXECUTED", style["action_label"])]], bg="#FFF7ED", border="#FDBA74", pad=8),
+        ]
+    )
+
+    def _draw_first_page_header_footer(canvas: Canvas, doc: SimpleDocTemplate) -> None:
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#0F172A"))
+        canvas.setFont("Helvetica-Bold", 9)
+        canvas.drawString(doc.leftMargin, LETTER[1] - 28, "Store Intelligence")
+        canvas.setFillColor(colors.HexColor("#64748B"))
+        canvas.setFont("Helvetica", 8.5)
+        canvas.drawRightString(LETTER[0] - doc.rightMargin, LETTER[1] - 28, f"{datetime.now(timezone.utc).strftime('%b %d, %Y')}")
+        canvas.setStrokeColor(colors.HexColor("#E2E8F0"))
+        canvas.setLineWidth(1)
+        canvas.line(doc.leftMargin, LETTER[1] - 34, LETTER[0] - doc.rightMargin, LETTER[1] - 34)
+
+        canvas.setStrokeColor(colors.HexColor("#E2E8F0"))
+        canvas.line(doc.leftMargin, 34, LETTER[0] - doc.rightMargin, 34)
+        canvas.setFillColor(colors.HexColor("#64748B"))
+        canvas.setFont("Helvetica", 8.5)
+        canvas.drawString(doc.leftMargin, 20, "Confidential • For store owner use")
+        canvas.drawRightString(LETTER[0] - doc.rightMargin, 20, "")
+        canvas.restoreState()
+
+    def _draw_later_pages_footer(canvas: Canvas, doc: SimpleDocTemplate) -> None:
+        # Minimal footer on later pages.
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#94A3B8"))
+        canvas.setFont("Helvetica", 8.5)
+        canvas.drawRightString(LETTER[0] - doc.rightMargin, 20, "")
+        canvas.restoreState()
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=LETTER,
+        leftMargin=40,
+        rightMargin=40,
+        topMargin=40,
+        bottomMargin=40,
+        title="Store Intelligence Report",
+        author="Shopify Automation Pipeline",
+    )
+    doc.build(story, onFirstPage=_draw_first_page_header_footer, onLaterPages=_draw_later_pages_footer)
     logger.info("PDF report written to %s", output_path)
     return str(output_path)

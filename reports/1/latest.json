@@ -1,0 +1,166 @@
+{
+  "generated_at": "2026-04-30T18:30:37.447466+00:00",
+  "headline": {
+    "primary": "YOUR STORE IS LOSING $14.28 TODAY",
+    "secondary": "$14.28/day is currently being lost due to unresolved store issues"
+  },
+  "status": {
+    "level": "CONFIRMED REVENUE LEAKS DETECTED",
+    "message": "Multiple operational failures are actively reducing store profitability"
+  },
+  "execution_required": {
+    "title": "EXECUTION REQUIRED",
+    "message": "Failure to act results in compounding daily revenue loss"
+  },
+  "main_cause": "INVENTORY IMBALANCE",
+  "inaction_risk": {
+    "weekly_loss": 99.96,
+    "message": "If no action is taken, you will lose approximately $99.96 in the next 7 days"
+  },
+  "execution_instruction": {
+    "headline": "IMMEDIATE EXECUTION REQUIRED",
+    "line_1": "Start with ACTION #1",
+    "line_2": "Do NOT delay ACTION #2"
+  },
+  "actions": [
+    {
+      "id": "action_1",
+      "title": "STOP DAILY CASH LOSS ($11.42/DAY)",
+      "type": "inventory",
+      "value": 159.92,
+      "daily_loss": 11.42,
+      "weekly_loss_projection": 79.94,
+      "context": "3 SKUs have inventory >0 and zero sales in the last 90 days",
+      "targets": [
+        "Test Hat (SKU: HAT-OS) \u2014 inventory: 8 units \u2014 sales: 0 in last 90d",
+        "Test Shoes (SKU: SHOE-42) \u2014 inventory: 1 units \u2014 sales: 0 in last 90d",
+        "Test Shirt (SKU: SHIRT-S) \u2014 inventory: 3 units \u2014 sales: 0 in last 90d"
+      ],
+      "execution": {
+        "primary": "Create automatic discount (15%) and bundle offer for listed SKUs",
+        "alternatives": [
+          "Bundle with top-selling product",
+          "Run limited-time promotion"
+        ]
+      },
+      "systems": [
+        {
+          "system": "Shopify",
+          "steps": [
+            "Shopify \u2192 Products \u2192 Discounts \u2192 Create 15% discount for listed SKUs",
+            "Shopify \u2192 Bundles / Apps \u2192 Create bundle offer for dead inventory listed SKUs",
+            "Shopify \u2192 Products \u2192 Inventory \u2192 Verify on-hand quantity + adjust if needed"
+          ]
+        },
+        {
+          "system": "Ads platform",
+          "steps": [
+            "Ads Manager \u2192 Pause campaigns promoting listed SKUs until sell-through improves"
+          ]
+        }
+      ],
+      "expected_outcome": {
+        "financial_recovery": 159.92,
+        "message": "Recover up to $159.92 by fixing this issue"
+      },
+      "risk_if_ignored": {
+        "weekly_loss": 79.94,
+        "message": "You will lose approximately $79.94 in the next 7 days if no action is taken"
+      },
+      "consequence": "Dead inventory is draining profit",
+      "decision": "EXECUTE NOW / DELAY = LOSS",
+      "hierarchy_label": "HIGHEST IMPACT ACTION \u2014 EXECUTE FIRST",
+      "priority_level": "primary",
+      "previous_impact": {
+        "same_type_last_day_loss": 0.0,
+        "change": 0.0
+      }
+    },
+    {
+      "id": "action_2",
+      "title": "PREVENT RETURN LOSSES ($2.86/DAY)",
+      "type": "returns",
+      "value": 20.0,
+      "daily_loss": 2.86,
+      "weekly_loss_projection": 20.02,
+      "context": "Test Shoes return rate is 50.0%",
+      "targets": [
+        "Test Shoes \u2014 50.0% return rate \u2014 1 returned unit"
+      ],
+      "execution": {
+        "primary": "Pause paid ads for Test Shoes until return rate improves",
+        "alternatives": [
+          "Add fit and care guidance",
+          "Adjust fulfillment quality checks"
+        ]
+      },
+      "systems": [
+        {
+          "system": "Shopify",
+          "steps": [
+            "Shopify \u2192 Products \u2192 Test Shoes \u2192 Update description (fit, sizing, materials) to reduce returns",
+            "Shopify \u2192 Orders \u2192 Refunds/Returns \u2192 Review return reasons for Test Shoes"
+          ]
+        },
+        {
+          "system": "Ads platform",
+          "steps": [
+            "Ads Manager \u2192 Pause campaign for Test Shoes",
+            "Ads Manager \u2192 Exclude Test Shoes from prospecting ad sets until return rate improves"
+          ]
+        },
+        {
+          "system": "Email/CRM",
+          "steps": [
+            "Email/CRM \u2192 Automation \u2192 Post-purchase flow \u2192 Add sizing/fit guidance for Test Shoes"
+          ]
+        }
+      ],
+      "expected_outcome": {
+        "financial_recovery": 20.0,
+        "message": "Recover up to $20.00 by fixing this issue"
+      },
+      "risk_if_ignored": {
+        "weekly_loss": 20.02,
+        "message": "You will lose approximately $20.02 in the next 7 days if no action is taken"
+      },
+      "consequence": "Returns are eroding margin every day",
+      "decision": "EXECUTE NOW / DELAY = LOSS",
+      "hierarchy_label": "SECONDARY ISSUE \u2014 ADDRESS AFTER ACTION #1",
+      "priority_level": "secondary",
+      "previous_impact": {
+        "same_type_last_day_loss": 0.0,
+        "change": 0.0
+      }
+    }
+  ],
+  "system_impact": {
+    "total_revenue_recovered_7d": 179.92,
+    "total_loss_prevented_7d": 99.96,
+    "roi_efficiency_score": 139.94
+  },
+  "risk": {
+    "weekly_loss_projection": 99.96,
+    "primary_driver": "ROOT CAUSE IDENTIFIED: INVENTORY IMBALANCE"
+  },
+  "execution_outcome_heading": "EXECUTION OUTCOME (PROJECTED IMPACT):",
+  "final_warning": "Continued inaction will maintain the current loss rate.",
+  "daily_delta": {
+    "revenue_change": 0.0,
+    "loss_change": 0.0,
+    "risk_change": 0.0
+  },
+  "trend_state": "baseline (first tracking day)",
+  "daily_insight": {
+    "message": "Baseline established. Future reports will track performance changes.",
+    "key_change": "Baseline established. Future reports will track performance changes."
+  },
+  "daily_comparison": {
+    "title": "First tracking day \u2014 baseline established",
+    "loss_change_line": "",
+    "revenue_change_line": "",
+    "continuity_memory": "First tracking day \u2014 baseline established",
+    "baseline_mode": true
+  },
+  "continuity_memory": "First tracking day \u2014 baseline established"
+}

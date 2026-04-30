@@ -25,6 +25,7 @@ type Action = {
     orders_7d: number
     revenue_7d: number
   }
+  normalized_impact_weight: number
 }
 
 type ResultsData = {
@@ -42,13 +43,23 @@ type ResultsData = {
     title: string
     status: 'validated' | 'pending_validation'
     before: { orders_7d: number; revenue_7d: number }
-    after: { orders_7d: number; revenue_7d: number } | null
-    delta: { orders_7d: number; revenue_7d: number } | null
+    after: { orders_7d: number; revenue_7d: number }
+    delta: { orders_7d: number; revenue_7d: number }
+    raw_delta: { orders_7d: number; revenue_7d: number }
+    normalized_delta: { orders_7d: number; revenue_7d: number }
+    impact_score: number
+    expected_result: {
+      metric: string
+      baseline: number
+      target: number
+      time_window_days: number
+    }
     timestamp_started: string
     timestamp_completed: string
   }>
-  total_revenue_recovered: number
-  total_loss_prevented: number
+  total_revenue_recovered_7d: number
+  total_loss_prevented_7d: number
+  roi_efficiency_score: number
 }
 
 type ProofRow = {
@@ -186,23 +197,38 @@ function ResultsPage() {
     <div className="page">
       <Link to={`/dashboard?store_id=${storeId}`}>Back</Link>
       <h2>Results</h2>
-      <p>Total revenue recovered: {currency(data.total_revenue_recovered)}</p>
-      <p>Total loss prevented: {currency(data.total_loss_prevented)}</p>
+      <section className="card">
+        <h3>System Impact This Week</h3>
+        <p>Total Revenue Recovered (7d): {currency(data.total_revenue_recovered_7d)}</p>
+        <p>Total Loss Prevented (7d): {currency(data.total_loss_prevented_7d)}</p>
+        <p>ROI Efficiency Score: {data.roi_efficiency_score.toFixed(2)}</p>
+      </section>
       {data.before_after_comparison.map((row) => {
         const p = proofByAction.get(row.action_id)
-        const afterOrders = row.after ? row.after.orders_7d : 0
-        const afterRevenue = row.after ? row.after.revenue_7d : 0
-        const deltaOrders = row.delta ? row.delta.orders_7d : 0
-        const deltaRevenue = row.delta ? row.delta.revenue_7d : 0
+        if (!p) return null
+        const isValidated = row.status === 'validated'
         return (
           <article key={row.action_id} className="card">
             <p><strong>{row.title}</strong></p>
-            <p>Before: {row.before.orders_7d} orders / {currency(row.before.revenue_7d)}</p>
-            <p>After: {afterOrders} orders / {currency(afterRevenue)}</p>
-            <p>Delta: {deltaOrders} orders / {currency(deltaRevenue)}</p>
-            <p>ROI Confirmed: {p?.roi_confirmed ? 'YES' : 'NO'}</p>
-            <p>Confidence score: {(p?.confidence_score ?? 0).toFixed(2)}</p>
-            <p>Status: {row.status === 'validated' ? 'Impact confirmed' : 'Pending validation'}</p>
+            {isValidated ? (
+              <>
+                <p><strong style={{ color: '#15803d' }}>ROI CONFIRMED</strong></p>
+                <p>Before: {row.before.orders_7d} orders / {currency(row.before.revenue_7d)}</p>
+                <p>After: {row.after.orders_7d} orders / {currency(row.after.revenue_7d)}</p>
+                <p>Delta: {row.raw_delta.orders_7d} orders / {currency(row.raw_delta.revenue_7d)}</p>
+                <p>Confidence score: {p.confidence_score.toFixed(2)}</p>
+              </>
+            ) : (
+              <>
+                <p><strong style={{ color: '#ca8a04' }}>IMPACT IN PROGRESS</strong></p>
+                <p>Baseline: {row.before.orders_7d} orders / {currency(row.before.revenue_7d)}</p>
+                <p>
+                  Expected result: {row.expected_result.target} {row.expected_result.metric} in{' '}
+                  {row.expected_result.time_window_days} days
+                </p>
+                <p className="small">Waiting for 24h validation window</p>
+              </>
+            )}
           </article>
         )
       })}
@@ -220,8 +246,9 @@ function ProgressPage() {
       <Link to={`/dashboard?store_id=${storeId}`}>Back</Link>
       <h2>Progress</h2>
       <p>Actions completed: {data.completed_actions.length}</p>
-      <p>Total revenue recovered: {currency(data.total_revenue_recovered)}</p>
-      <p>Total loss prevented: {currency(data.total_loss_prevented)}</p>
+      <p>Total revenue recovered (7d): {currency(data.total_revenue_recovered_7d)}</p>
+      <p>Total loss prevented (7d): {currency(data.total_loss_prevented_7d)}</p>
+      <p>ROI efficiency score: {data.roi_efficiency_score.toFixed(2)}</p>
     </div>
   )
 }

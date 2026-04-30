@@ -193,7 +193,10 @@ def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
     evaluate_completed_task_impacts(store_id, summary)
     collect_due_reminders(store_id)
     task_sections = build_report_task_sections(store_id, summary)
-    pdf_path = create_report_pdf(summary, output_dir=f"reports/{store_id}", task_sections=task_sections, store_id=store_id)
+    from api.store_intelligence_api import api_results
+
+    report_payload = api_results(store_id)
+    pdf_path = create_report_pdf(report_payload, output_dir=f"reports/{store_id}", task_sections=task_sections, store_id=store_id)
     actions = build_structured_actions(summary, max_actions=5)
     recipient_email = get_store_contact_email_by_id(store_id) or ""
     _assert_store_report_delivery_scope(store_id=store_id, report_path=pdf_path, recipient_email=recipient_email)
