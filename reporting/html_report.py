@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from html import escape
 
+from reporting.advice_engine import get_action_advice
+
 
 def _fmt_money(value: float | int | None) -> str:
     try:
@@ -38,73 +40,111 @@ def _daily_impact_badge(value: float) -> str:
     )
 
 
-def _render_targets(targets: list[dict]) -> str:
+def _render_playbook(items: list[str]) -> str:
+    if not items:
+        return "<p style=\"color:#00e5a0; font-size:13px; margin:0 0 8px 0;\">→ No specific playbook steps available.</p>"
+    return "".join(
+        f"<p style=\"color:#00e5a0; font-size:13px; margin:0 0 8px 0;\">→ {escape(str(item))}</p>"
+        for item in items
+    )
+
+
+def _safe_text(value: object, *, default: str = "—") -> str:
+    text = str(value).strip() if value is not None else ""
+    if not text or text.lower() in {"n/a", "none", "n/a - not relevant"}:
+        return default
+    return text
+
+
+def _render_targets(targets: list[dict], action_type: str) -> str:
+    normalized_type = str(action_type or "").strip().lower()
+    if normalized_type in {"low_repeat_purchase_rate", "abandoned_checkout_spike"}:
+        return ""
     if not targets:
         return (
-            "<tr><td style=\"color:#a0a0a0; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; "
-            "font-size:12px;\">No SKU targets available</td></tr>"
+            "<tr><td style=\"color:#666666; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; "
+            "font-size:12px;\">—</td></tr>"
         )
+
     rows: list[str] = []
     for t in targets:
-        sku = escape(str(t.get("sku") or "N/A"))
-        name = escape(str(t.get("name") or "N/A"))
-        inventory = escape(str(t.get("inventory") if t.get("inventory") is not None else "N/A"))
-        sales = escape(str(t.get("sales_last_90d") if t.get("sales_last_90d") is not None else "N/A"))
+        name = escape(_safe_text(t.get("name")))
+        sku = escape(_safe_text(t.get("sku")))
+        inventory = _safe_text(t.get("inventory"))
+        sales_90d = _safe_text(t.get("sales_last_90d"))
         rr_raw = t.get("return_rate")
-        rr = "N/A - not relevant"
-        if rr_raw is not None:
-            try:
-                rr = f"{float(rr_raw):.1f}%"
-            except (TypeError, ValueError):
-                rr = "N/A - not relevant"
         returned_units = t.get("returned_units")
-        returned_label = None
-        if returned_units is not None:
+        email = escape(_safe_text(t.get("email")))
+        ltv = t.get("ltv")
+        days_since_order = _safe_text(t.get("days_since_order"))
+        price = _safe_text(t.get("price"))
+        units_sold = _safe_text(t.get("units_sold"))
+
+        if normalized_type == "dead_inventory":
+            detail = f"<span style=\"color:#666666;\"> | INV: {escape(inventory)} | 90D SALES: {escape(sales_90d)}</span>"
+            lead = sku if sku != "—" else name
+        elif normalized_type == "high_return_rate":
+            rr_text = "—"
+            if rr_raw is not None:
+                try:
+                    rr_text = f"{float(rr_raw):.1f}%"
+                except (TypeError, ValueError):
+                    rr_text = "—"
+            units_text = "—"
+            if returned_units is not None:
+                try:
+                    units = int(returned_units)
+                    units_text = f"{units} unit returned" if units == 1 else f"{units} units returned"
+                except (TypeError, ValueError):
+                    units_text = "—"
+            detail = f"<span style=\"color:#666666;\"> | RETURN RATE: {escape(rr_text)} | {escape(units_text)}</span>"
+            lead = name
+        elif normalized_type == "churned_customers":
+            detail = f"<span style=\"color:#666666;\"> | LAST ORDER: {escape(days_since_order)} days ago</span>"
+            lead = email if email != "—" else name
+        elif normalized_type == "high_value_customer_at_risk":
+            ltv_text = "—"
+            if ltv is not None:
+                try:
+                    ltv_text = f"${float(ltv):,.2f}"
+                except (TypeError, ValueError):
+                    ltv_text = "—"
+            detail = f"<span style=\"color:#666666;\"> | LTV: {escape(ltv_text)} | SILENT: {escape(days_since_order)} days</span>"
+            lead = name
+        elif normalized_type == "low_margin_products":
+            price_text = "—"
             try:
-                units = int(returned_units)
-                returned_label = f"{units} unit returned" if units == 1 else f"{units} units returned"
+                if str(price) != "—":
+                    price_text = f"${float(price):,.2f}"
             except (TypeError, ValueError):
-                returned_label = None
-        # Return-rate alerts are clearer with a focused row format.
-        is_return_row = rr_raw is not None and t.get("inventory") is None and t.get("sales_last_90d") is None
-        detail = (
-            f"<span style=\"color:#666666;\"> | RETURN RATE: {escape(rr)}"
-            + (f" | {escape(returned_label)}" if returned_label else "")
-            + "</span>"
-        ) if is_return_row else f"<span style=\"color:#666666;\"> | INV: {inventory} | 90D SALES: {sales} | RETURN: {escape(rr)}</span>"
-        code_or_name = sku if str(t.get("sku") or "").strip() else name
+                price_text = "—"
+            detail = f"<span style=\"color:#666666;\"> | PRICE: {escape(price_text)} | UNITS SOLD: {escape(units_sold)}</span>"
+            lead = sku if sku != "—" else name
+        else:
+            # Generic fallback: avoid N/A/None and only show meaningful fields.
+            parts = []
+            lead = sku if sku != "—" else name
+            if str(inventory) != "—":
+                parts.append(f"INV: {escape(inventory)}")
+            if str(sales_90d) != "—":
+                parts.append(f"90D SALES: {escape(sales_90d)}")
+            if parts:
+                detail = f"<span style=\"color:#666666;\"> | {' | '.join(parts)}</span>"
+            else:
+                detail = ""
+
         rows.append(
             "<tr>"
             "<td style=\"padding:0 0 3px 0;\">"
             "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#0f0f0f; border-radius:3px;\">"
             "<tr><td style=\"padding:6px 10px; font-family:'Courier New', Courier, monospace; font-size:12px; line-height:1.4;\">"
-            f"<span style=\"color:#00e5a0;\">{code_or_name}</span>"
+            f"<span style=\"color:#00e5a0;\">{lead}</span>"
             f"{detail}"
             "</td></tr></table>"
             "</td>"
             "</tr>"
         )
     return "".join(rows)
-
-
-def _render_list(items: list[str], color: str) -> str:
-    if not items:
-        marker = "→" if color == "#00e5a0" else "⚠"
-        return f"<div style=\"margin:0 0 6px 0; color:{color}; font-size:13px;\">{marker} No additional data</div>"
-    marker = "→" if color == "#00e5a0" else "⚠"
-    return "".join(
-        f"<div style=\"margin:0 0 6px 0; color:{color}; font-size:13px;\">{marker} {escape(str(item))}</div>" for item in items
-    )
-
-
-def _bold_first_word(text: str) -> str:
-    value = str(text or "").strip()
-    if not value:
-        return ""
-    parts = value.split(maxsplit=1)
-    if len(parts) == 1:
-        return f"<strong>{escape(parts[0])}</strong>"
-    return f"<strong>{escape(parts[0])}</strong> {escape(parts[1])}"
 
 
 def build_html_report(report_data: dict) -> str:
@@ -126,16 +166,31 @@ def build_html_report(report_data: dict) -> str:
     action_blocks: list[str] = []
     for action in actions:
         number = escape(str(action.get("number") or ""))
-        action_type = escape(str(action.get("type") or "ACTION"))
+        action_type = escape(_safe_text(action.get("type"), default="ACTION"))
+        action_type_raw = str(action.get("action_type") or "").strip().lower()
         is_primary = "PRIMARY" in action_type.upper()
         border_color = "#00e5a0" if is_primary else "#ff6b35"
         action_daily = float(action.get("daily_impact") or 0.0)
-        problem = escape(str(action.get("problem") or "No problem statement provided."))
-        fix = _bold_first_word(str(action.get("fix") or "Execute recommended action."))
         state = _state_badge(str(action.get("state") or "PENDING"))
-        impact_bullets = _render_list(list(action.get("impact_bullets") or []), "#00e5a0")
-        risk_bullets = _render_list(list(action.get("risk_bullets") or []), "#ff6b35")
-        target_rows = _render_targets(list(action.get("targets") or []))
+        target_rows = _render_targets(list(action.get("targets") or []), action_type_raw)
+        advice = get_action_advice(
+            str(action.get("action_type") or action.get("type") or ""),
+            dict(action.get("metrics") or {}),
+        )
+        advice_headline = escape(str(advice.get("headline") or ""))
+        advice_context = escape(str(advice.get("context") or ""))
+        advice_benchmark = escape(str(advice.get("benchmark") or ""))
+        advice_urgency = escape(str(advice.get("urgency") or ""))
+        playbook_html = _render_playbook(list(advice.get("playbook") or []))
+        target_section = (
+            "<tr><td style=\"padding:0 20px 4px 20px; color:#555555; font-size:10px; text-transform:uppercase; letter-spacing:1px;\">TARGETS</td></tr>"
+            f"<tr><td style=\"padding:0 20px 10px 20px;\">"
+            "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">"
+            f"{target_rows}"
+            "</table></td></tr>"
+            if target_rows
+            else ""
+        )
 
         action_blocks.append(
             "<tr>"
@@ -148,7 +203,7 @@ def build_html_report(report_data: dict) -> str:
             "<tr>"
             "<td style=\"padding:0 10px 0 0;\">"
             f"<div style=\"color:#555555; font-size:11px; letter-spacing:1px; text-transform:uppercase;\">Action {number}</div>"
-            f"<div style=\"color:#ffffff; font-size:14px; font-weight:600;\">{action_type}</div>"
+            f"<div style=\"color:{border_color}; font-size:14px; font-weight:600;\">{action_type}</div>"
             "</td>"
             "<td align=\"right\">"
             f"{_daily_impact_badge(action_daily)}"
@@ -157,37 +212,19 @@ def build_html_report(report_data: dict) -> str:
             "</table>"
             "</td>"
             "</tr>"
-            "<tr><td style=\"padding:0 20px 4px 20px; color:#888888; font-size:10px; text-transform:uppercase; letter-spacing:1px;\">PROBLEM</td></tr>"
-            f"<tr><td style=\"padding:0 20px 12px 20px; color:#ffffff; font-size:14px; line-height:1.5;\">{problem}</td></tr>"
-            "<tr><td style=\"padding:0 20px 4px 20px; color:#00e5a0; font-size:10px; text-transform:uppercase; letter-spacing:1px;\">FIX</td></tr>"
-            f"<tr><td style=\"padding:0 20px 12px 20px; color:#ffffff; font-size:14px; line-height:1.5;\">{fix}</td></tr>"
-            "<tr>"
-            "<td style=\"padding:0 20px 12px 20px;\">"
-            "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">"
-            "<tr>"
-            "<td width=\"50%\" valign=\"top\" style=\"padding:0 8px 0 0;\">"
-            "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#0d2b1f; border-radius:4px;\">"
-            "<tr><td style=\"padding:10px 14px;\">"
-            "<div style=\"color:#888888; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;\">IMPACT</div>"
-            f"{impact_bullets}"
-            "</td></tr></table>"
-            "</td>"
-            "<td width=\"50%\" valign=\"top\" style=\"padding:0 0 0 8px;\">"
-            "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#2b0d0d; border-radius:4px;\">"
-            "<tr><td style=\"padding:10px 14px;\">"
-            "<div style=\"color:#888888; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;\">RISK IF IGNORED</div>"
-            f"{risk_bullets}"
-            "</td></tr></table>"
-            "</td>"
-            "</tr>"
-            "</table>"
-            "</td>"
-            "</tr>"
-            "<tr><td style=\"padding:0 20px 4px 20px; color:#555555; font-size:10px; text-transform:uppercase; letter-spacing:1px;\">TARGET SKUs</td></tr>"
-            f"<tr><td style=\"padding:0 20px 10px 20px;\">"
-            "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">"
-            f"{target_rows}"
-            "</table></td></tr>"
+            "<tr><td style=\"padding:0 20px 12px 20px;\">"
+            f"<p style=\"color:#ffffff; font-size:15px; font-weight:600; margin:0 0 12px 0;\">{advice_headline}</p>"
+            f"<p style=\"color:#a0a0a0; font-size:13px; line-height:1.6; margin:0 0 16px 0;\">{advice_context}</p>"
+            "<div style=\"background:#0d2b1f; border-radius:4px; padding:12px 16px; margin-bottom:12px;\">"
+            "<p style=\"color:#00e5a0; font-size:10px; letter-spacing:1px; margin:0 0 8px 0;\">WHAT TO DO</p>"
+            f"{playbook_html}"
+            "</div>"
+            f"<p style=\"color:#666666; font-size:12px; font-style:italic; margin:0 0 8px 0;\">{advice_benchmark}</p>"
+            "<div style=\"background:#2b0d0d; border-radius:4px; padding:10px 14px;\">"
+            f"<p style=\"color:#ff6b35; font-size:12px; margin:0;\">⚠ {advice_urgency}</p>"
+            "</div>"
+            "</td></tr>"
+            f"{target_section}"
             "<tr><td style=\"padding:0 20px 20px 20px;\" align=\"right\">"
             f"{state}"
             "</td></tr>"

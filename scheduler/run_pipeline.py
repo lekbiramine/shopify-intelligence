@@ -25,6 +25,10 @@ from etl.load import (
     load_inventory,
 )
 from analytics.summary import build_summary
+from analytics.insights.insight_low_repeat_purchase_rate import run_insight as run_low_repeat_purchase_rate_insight
+from analytics.insights.insight_high_value_customer_at_risk import run_insight as run_high_value_customer_at_risk_insight
+from analytics.insights.insight_abandoned_checkout_spike import run_insight as run_abandoned_checkout_spike_insight
+from analytics.insights.insight_low_margin_products import run_insight as run_low_margin_products_insight
 from reporting.email_sender import send_store_report_email
 from reporting.pdf_report_v2 import build_structured_actions
 from tasks.engine import (
@@ -44,6 +48,23 @@ from utils.shopify_auth import (
 )
 
 logger = get_logger(__name__)
+
+REGISTERED_INSIGHT_ACTIONS = [
+    "dead_inventory",
+    "high_return_rate",
+    "churned_customers",
+    "low_repeat_purchase_rate",
+    "high_value_customer_at_risk",
+    "abandoned_checkout_spike",
+    "low_margin_products",
+]
+
+REGISTERED_INSIGHT_RUNNERS = (
+    run_low_repeat_purchase_rate_insight,
+    run_high_value_customer_at_risk_insight,
+    run_abandoned_checkout_spike_insight,
+    run_low_margin_products_insight,
+)
 
 
 def _ensure_store_access_token(
@@ -194,8 +215,47 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
     enriched_by_id = {str(a.get("id") or ""): a for a in enriched_actions if str(a.get("id") or "").strip()}
     fallback_actions = build_structured_actions(summary, max_actions=5)
     fallback_by_rank = {idx + 1: row for idx, row in enumerate(fallback_actions)}
+    revenue_trend = (summary.get("revenue") or {}).get("trend") or {}
+    orders_7d = float(revenue_trend.get("current_7d_orders") or 0.0)
+    revenue_7d = float(revenue_trend.get("current_7d_net_revenue") or 0.0)
+    store_aov = (revenue_7d / orders_7d) if orders_7d > 0 else 0.0
+
+    def _infer_action_type(*, diagnosis: str, intervention: str, enriched_type: str) -> str:
+        text = f"{diagnosis} {intervention}".lower()
+        et = str(enriched_type or "").strip().lower()
+        if et in REGISTERED_INSIGHT_ACTIONS:
+            return et
+        if "dead inventory" in text or "zero sales in the last 90 days" in text or et == "inventory":
+            return "dead_inventory"
+        if "return rate" in text or "returned unit" in text or "refund" in text or et == "returns":
+            return "high_return_rate"
+        if "churn" in text or "inactive" in text or "win-back" in text:
+            return "churned_customers"
+        if "repeat" in text and "purchase" in text:
+            return "low_repeat_purchase_rate"
+        if "vip" in text and "risk" in text:
+            return "high_value_customer_at_risk"
+        if "abandon" in text and "checkout" in text:
+            return "abandoned_checkout_spike"
+        if "margin" in text and ("profit" in text or "price increase" in text):
+            return "low_margin_products"
+        return "dead_inventory"
 
     def _parse_target_row(raw_target: object) -> dict | None:
+        if isinstance(raw_target, dict):
+            return {
+                "name": str(raw_target.get("name") or "").strip(),
+                "sku": str(raw_target.get("sku") or "N/A").strip() or "N/A",
+                "inventory": raw_target.get("inventory"),
+                "sales_last_90d": raw_target.get("sales_last_90d") or raw_target.get("units_sold"),
+                "return_rate": raw_target.get("return_rate"),
+                "returned_units": raw_target.get("returned_units"),
+                "email": raw_target.get("email"),
+                "ltv": raw_target.get("ltv"),
+                "days_since_order": raw_target.get("days_since_order"),
+                "price": raw_target.get("price"),
+                "units_sold": raw_target.get("units_sold"),
+            }
         text = str(raw_target or "").strip()
         if not text:
             return None
@@ -228,6 +288,11 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
         returned_match = re.search(r"(\d+)\s+returned\s+unit", text, flags=re.IGNORECASE)
         if returned_match:
             returned_units = int(returned_match.group(1))
+        ltv_match = re.search(r"ltv\s*[:=]?\s*\$?(\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+        days_since_match = re.search(r"(\d+)\s*d(?:ays?)?\s+since", text, flags=re.IGNORECASE)
+        email_match = re.search(r"([a-zA-Z0-9][^@\s]{0,10}\*{0,3}@[^\s]+)", text)
+        price_match = re.search(r"price\s*[:=]?\s*\$?(\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+        units_sold_match = re.search(r"units?\s*sold\s*[:=]?\s*(\d+)", text, flags=re.IGNORECASE)
 
         return {
             "name": name,
@@ -236,6 +301,11 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
             "sales_last_90d": sales_last_90d,
             "return_rate": return_rate,
             "returned_units": returned_units,
+            "email": email_match.group(1).strip() if email_match else None,
+            "ltv": float(ltv_match.group(1)) if ltv_match else None,
+            "days_since_order": int(days_since_match.group(1)) if days_since_match else None,
+            "price": float(price_match.group(1)) if price_match else None,
+            "units_sold": int(units_sold_match.group(1)) if units_sold_match else None,
         }
 
     actions: list[dict] = []
@@ -244,6 +314,8 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
         enriched = enriched_by_id.get(action_id, {})
         fallback = fallback_by_rank.get(idx, {})
         expected = action.get("expected_outcome") or {}
+        diagnosis = str(action.get("diagnosis") or fallback.get("context") or "Issue is reducing profitability.")
+        intervention = str(action.get("intervention") or fallback.get("execute_command") or "Execute highest-priority action now.")
 
         raw_targets = list(action.get("targets") or enriched.get("targets") or fallback.get("targets") or [])
         target_rows = []
@@ -253,13 +325,112 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
                 target_rows.append(parsed)
         risk_amount = float(expected.get("risk_if_ignored") or 0.0)
         weekly_value = float(expected.get("weekly_value") or fallback.get("value") or 0.0)
+        action_type = _infer_action_type(
+            diagnosis=diagnosis,
+            intervention=intervention,
+            enriched_type=str(enriched.get("type") or ""),
+        )
+
+        metrics: dict = {"store_aov": store_aov}
+        if action_type == "dead_inventory":
+            sku_count = len(target_rows)
+            total_units = sum(int(row.get("inventory") or 0) for row in target_rows)
+            estimated_value = weekly_value
+            metrics.update(
+                {
+                    "sku_count": sku_count,
+                    "total_units": total_units,
+                    "days_stale": 90,
+                    "estimated_value": estimated_value,
+                }
+            )
+        elif action_type == "high_return_rate":
+            first = target_rows[0] if target_rows else {}
+            rr_pct = float(first.get("return_rate") or 0.0)
+            returned_units = int(first.get("returned_units") or 0)
+            metrics.update(
+                {
+                    "product_name": str(first.get("name") or "This product"),
+                    "return_rate": rr_pct / 100.0 if rr_pct > 1 else rr_pct,
+                    "returned_units": returned_units,
+                    "revenue_lost": weekly_value,
+                    "avg_return_rate_healthy": 0.05,
+                }
+            )
+        elif action_type == "low_repeat_purchase_rate":
+            one_time_buyers = max(len(target_rows), 1)
+            revenue_if_10pct = weekly_value if weekly_value > 0 else (one_time_buyers * store_aov * 0.10)
+            total_customers_est = max(one_time_buyers, int(round(one_time_buyers / 0.8)) if one_time_buyers > 0 else 0)
+            repeat_rate = 1.0 - (one_time_buyers / total_customers_est) if total_customers_est > 0 else 0.0
+            metrics.update(
+                {
+                    "repeat_rate": max(min(repeat_rate, 1.0), 0.0),
+                    "total_customers": int(total_customers_est),
+                    "one_time_buyers": int(one_time_buyers),
+                    "store_aov": store_aov,
+                    "revenue_if_10pct_improvement": float(revenue_if_10pct),
+                }
+            )
+        elif action_type == "high_value_customer_at_risk":
+            customer_count = len(target_rows)
+            avg_ltv = (
+                sum(float(row.get("ltv") or 0.0) for row in target_rows) / customer_count
+                if customer_count > 0
+                else 0.0
+            )
+            avg_days = (
+                sum(float(row.get("days_since_order") or 0.0) for row in target_rows) / customer_count
+                if customer_count > 0
+                else 0.0
+            )
+            total_ltv_at_risk = float(weekly_value if weekly_value > 0 else (customer_count * avg_ltv))
+            metrics.update(
+                {
+                    "customer_count": int(customer_count),
+                    "avg_ltv": float(avg_ltv),
+                    "days_since_last_order": float(avg_days),
+                    "total_ltv_at_risk": float(total_ltv_at_risk),
+                    "store_aov": store_aov,
+                }
+            )
+        elif action_type == "abandoned_checkout_spike":
+            abandoned_count = max(len(target_rows), 1)
+            potential_revenue = float(weekly_value if weekly_value > 0 else (abandoned_count * store_aov))
+            abandonment_rate = 0.75 if abandoned_count > 0 else 0.0
+            prev_rate = max(abandonment_rate - 0.08, 0.0)
+            metrics.update(
+                {
+                    "abandoned_count": int(abandoned_count),
+                    "abandonment_rate": float(abandonment_rate),
+                    "potential_revenue": float(potential_revenue),
+                    "store_aov": store_aov,
+                    "prev_week_abandonment_rate": float(prev_rate),
+                }
+            )
+        elif action_type == "low_margin_products":
+            first = target_rows[0] if target_rows else {}
+            units_sold = int(first.get("units_sold") or first.get("sales_last_90d") or 0)
+            revenue_generated = float(
+                weekly_value if weekly_value > 0 else (units_sold * float(first.get("price") or store_aov))
+            )
+            estimated_margin = 0.60
+            metrics.update(
+                {
+                    "product_name": str(first.get("name") or "This product"),
+                    "units_sold": units_sold,
+                    "estimated_margin": estimated_margin,
+                    "revenue_generated": revenue_generated,
+                    "profit_generated": revenue_generated * estimated_margin,
+                    "store_avg_margin": 0.60,
+                }
+            )
         actions.append(
             {
                 "number": int(action.get("priority") or idx),
                 "type": "PRIMARY REVENUE LEAK" if idx == 1 else "SECONDARY OPTIMIZATION LEAK",
                 "daily_impact": float(expected.get("daily_impact") or fallback.get("daily_loss") or 0.0),
-                "problem": str(action.get("diagnosis") or fallback.get("context") or "Issue is reducing profitability."),
-                "fix": str(action.get("intervention") or fallback.get("execute_command") or "Execute highest-priority action now."),
+                "problem": diagnosis,
+                "fix": intervention,
                 "impact_bullets": [
                     f"Recover ${weekly_value:,.2f} over 7 days",
                     f"Protect margin by acting today",
@@ -270,6 +441,8 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
                 ],
                 "targets": target_rows,
                 "state": str(action.get("state") or "PENDING"),
+                "action_type": action_type,
+                "metrics": metrics,
             }
         )
 

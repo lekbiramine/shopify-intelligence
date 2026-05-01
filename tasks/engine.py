@@ -184,7 +184,9 @@ def transition_task_status(store_id: int, task_id: int, status: str, summary: di
 
     prev = str(existing.get("status") or "pending")
     allowed = {
-        "pending": {"in_progress", "ignored"},
+        # Auto-verification can complete tasks directly from pending when
+        # the leak disappears before a manual in_progress transition occurs.
+        "pending": {"in_progress", "completed", "ignored"},
         "in_progress": {"completed", "ignored"},
         "completed": set(),
         "ignored": set(),

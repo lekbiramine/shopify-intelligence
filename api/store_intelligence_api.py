@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from analytics.summary import build_summary
-from reporting.pdf_report_v2 import build_structured_actions, create_report_pdf
+from reporting.pdf_report_v2 import build_structured_actions
 
 app = FastAPI(title="Store Intelligence API")
 app.add_middleware(
@@ -633,11 +633,6 @@ def _build_daily_comparison(*, revenue_change: float, loss_change: float, baseli
     }
 
 
-def _generate_local_pdf_report(store_id: int, report_payload: dict) -> str:
-    output_dir = str(Path("reports") / str(store_id))
-    return create_report_pdf(report_payload, output_dir=output_dir, store_id=store_id)
-
-
 def _to_canonical_actions(store_id: int) -> list[ActionResponse]:
     summary = build_summary(store_id)
     state = _load_state(store_id)
@@ -1205,7 +1200,6 @@ def api_results(store_id: int = 1) -> dict:
     report_payload["action_states"] = action_states
     report_payload["verification_rows"] = verification_rows
 
-    _generate_local_pdf_report(store_id, report_payload)
     response = {
         "generated_at": report_payload["generated_at"],
         "headline": report_payload["headline"],

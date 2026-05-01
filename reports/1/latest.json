@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-01T16:26:15.041620+00:00",
+  "generated_at": "2026-05-01T21:31:12.534633+00:00",
   "headline": {
     "primary": "YOUR STORE IS LOSING $14.28 TODAY",
     "secondary": "$14.28/day is currently being lost due to unresolved store issues"
@@ -166,7 +166,7 @@
   "report_contract": {
     "metadata": {
       "store_id": "1",
-      "generated_at": "2026-05-01T16:26:15.041620+00:00",
+      "generated_at": "2026-05-01T21:31:12.534633+00:00",
       "status": "warning"
     },
     "financials": {
@@ -295,7 +295,7 @@
       "ignored_at": null,
       "impact_realized_24h": 0.0,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-01T16:26:15.041471+00:00"
+      "last_verification_at": "2026-05-01T21:31:12.534530+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -307,7 +307,7 @@
       "ignored_at": null,
       "impact_realized_24h": 0.0,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-01T16:26:14.998897+00:00"
+      "last_verification_at": "2026-05-01T21:31:12.292034+00:00"
     }
   },
   "verification_rows": [

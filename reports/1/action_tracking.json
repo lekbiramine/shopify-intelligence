@@ -44,7 +44,7 @@
       "ignored_at": null,
       "impact_realized_24h": 0.0,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-01T16:26:15.041471+00:00"
+      "last_verification_at": "2026-05-01T21:31:12.534530+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -56,7 +56,7 @@
       "ignored_at": null,
       "impact_realized_24h": 0.0,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-01T16:26:14.998897+00:00"
+      "last_verification_at": "2026-05-01T21:31:12.292034+00:00"
     }
   },
   "action_history": [
