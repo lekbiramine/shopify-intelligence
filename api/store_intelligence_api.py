@@ -25,6 +25,18 @@ class CompleteActionRequest(BaseModel):
     action_id: str
 
 
+class UpdateActionStateRequest(BaseModel):
+    action_id: str
+    status: str  # execute | snooze | ignore
+    snooze_hours: int = 24
+    note: str = ""
+
+
+class ExecuteActionRequest(BaseModel):
+    action_id: str
+    mode: str = "manual"  # manual | queued
+
+
 class BaselineMetrics(BaseModel):
     orders_7d: float
     revenue_7d: float
@@ -54,6 +66,73 @@ class ActionResponse(BaseModel):
     expected_result: ExpectedResult
     baseline_metrics: BaselineMetrics
     normalized_impact_weight: float
+
+
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _normalize_targets(raw_targets: list[object], *, max_items: int = 3) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_targets or []:
+        text = str(raw or "").strip()
+        lowered = text.lower()
+        if not text or lowered in {"unknown", "n/a", "none", "-", "sku - unknown"}:
+            continue
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        cleaned.append(text)
+        if len(cleaned) >= max_items:
+            break
+    return cleaned
+
+
+def _sanitize_action_row(raw: dict) -> dict:
+    value = max(0.0, round(_safe_float(raw.get("value")), 2))
+    daily_loss = max(0.0, round(_safe_float(raw.get("daily_loss")), 2))
+    targets = _normalize_targets(list(raw.get("targets") or []))
+    title = str(raw.get("title") or "").strip()
+    execute_command = str(raw.get("execute_command") or "").strip()
+    if not title:
+        title = "Stop cash leak"
+    if not execute_command:
+        execute_command = "Run the highest-impact corrective action now."
+    return {
+        **raw,
+        "title": title,
+        "value": value,
+        "daily_loss": daily_loss,
+        "targets": targets,
+        "execute_command": execute_command,
+    }
+
+
+def _ranking_factors(*, action_type: str, summary: dict) -> tuple[float, float]:
+    inventory = summary.get("inventory", {}) if isinstance(summary, dict) else {}
+    revenue = summary.get("revenue", {}) if isinstance(summary, dict) else {}
+    inventory_pressure = float(len(inventory.get("out_of_stock", []) or []) + len(inventory.get("low_stock", []) or []))
+    return_rate_products = list(revenue.get("high_return_rate", []) or [])
+    top_return_rate = 0.0
+    if return_rate_products:
+        top_return_rate = max(_safe_float((row or {}).get("return_rate"), 0.0) for row in return_rate_products)
+    return_penalty = (top_return_rate * 100.0 * 0.5) if action_type == "returns" else 0.0
+    inventory_stagnation_factor = (inventory_pressure * 0.25) if action_type == "inventory" else 0.0
+    return round(return_penalty, 2), round(inventory_stagnation_factor, 2)
+
+
+def _deterministic_priority_score(*, action_type: str, value: float, daily_loss: float, summary: dict) -> float:
+    base = (daily_loss * 7.0) + value
+    return_penalty, inventory_stagnation_factor = _ranking_factors(action_type=action_type, summary=summary)
+    return round(base + return_penalty + inventory_stagnation_factor, 4)
+
+
+def _feedback_key(title: str, action_type: str) -> str:
+    return f"{action_type}:{str(title or '').strip().lower()}"
 
 
 def _utc_now_iso() -> str:
@@ -115,7 +194,15 @@ def _save_result_snapshots(store_id: int, payload: dict) -> None:
 
 
 def _empty_state() -> dict:
-    return {"completed_actions": [], "action_lifecycle": {}}
+    return {
+        "completed_actions": [],
+        "action_lifecycle": {},
+        "action_states": {},
+        "action_history": [],
+        "execution_queue": [],
+        "verification_history": [],
+        "score_feedback": {},
+    }
 
 
 def _load_state(store_id: int) -> dict:
@@ -130,11 +217,60 @@ def _load_state(store_id: int) -> dict:
         state["completed_actions"] = []
     if "action_lifecycle" not in state or not isinstance(state.get("action_lifecycle"), dict):
         state["action_lifecycle"] = {}
+    if "action_states" not in state or not isinstance(state.get("action_states"), dict):
+        state["action_states"] = {}
+    if "action_history" not in state or not isinstance(state.get("action_history"), list):
+        state["action_history"] = []
+    if "execution_queue" not in state or not isinstance(state.get("execution_queue"), list):
+        state["execution_queue"] = []
+    if "verification_history" not in state or not isinstance(state.get("verification_history"), list):
+        state["verification_history"] = []
+    if "score_feedback" not in state or not isinstance(state.get("score_feedback"), dict):
+        state["score_feedback"] = {}
     return state
 
 
 def _save_state(store_id: int, state: dict) -> None:
     _state_path(store_id).write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _default_action_state_row(action_id: str) -> dict:
+    now = _utc_now_iso()
+    return {
+        "action_id": action_id,
+        "status": "not_executed",
+        "created_at": now,
+        "updated_at": now,
+        "executed_at": None,
+        "snoozed_until": None,
+        "ignored_at": None,
+        "impact_realized_24h": 0.0,
+        "impact_realized_7d": 0.0,
+        "last_verification_at": None,
+    }
+
+
+def _get_action_state_row(state: dict, action_id: str) -> dict:
+    action_states = state.get("action_states", {})
+    row = action_states.get(action_id)
+    if not isinstance(row, dict):
+        row = _default_action_state_row(action_id)
+        action_states[action_id] = row
+        state["action_states"] = action_states
+    return row
+
+
+def _append_action_event(state: dict, action_id: str, event: str, payload: dict | None = None) -> None:
+    history = list(state.get("action_history", []))
+    history.append(
+        {
+            "action_id": action_id,
+            "event": event,
+            "timestamp": _utc_now_iso(),
+            "payload": payload or {},
+        }
+    )
+    state["action_history"] = history
 
 
 def _store_snapshot_metrics(store_id: int) -> dict[str, float]:
@@ -504,11 +640,14 @@ def _generate_local_pdf_report(store_id: int, report_payload: dict) -> str:
 
 def _to_canonical_actions(store_id: int) -> list[ActionResponse]:
     summary = build_summary(store_id)
+    state = _load_state(store_id)
+    score_feedback = state.get("score_feedback", {}) if isinstance(state, dict) else {}
     raw_actions = build_structured_actions(summary, max_actions=5)
     baseline = _store_snapshot_metrics(store_id)
     actions: list[ActionResponse] = []
     for idx, raw in enumerate(raw_actions, start=1):
-        er = raw.get("expected_result") or {}
+        sanitized = _sanitize_action_row(raw)
+        er = sanitized.get("expected_result") or {}
         target_min = float(er.get("target_min") or 0.0)
         target_max = float(er.get("target_max") or 0.0)
         target = target_max if target_max > 0 else target_min
@@ -525,25 +664,64 @@ def _to_canonical_actions(store_id: int) -> list[ActionResponse]:
         normalized_impact_weight = round(
             (float(normalized_delta["orders_7d"]) + float(normalized_delta["revenue_7d"])) / 2.0, 4
         )
-        score = round(
-            (float(raw.get("value") or 0.0) + (float(raw.get("daily_loss") or 0.0) * 7.0)) * (1.0 + normalized_impact_weight),
-            4,
+        inferred_type = _infer_action_type(
+            ActionResponse(
+                id=f"action_{idx}",
+                title=str(sanitized.get("title") or ""),
+                value=float(sanitized.get("value") or 0.0),
+                daily_loss=float(sanitized.get("daily_loss") or 0.0),
+                priority_score=0.0,
+                priority_ratio=1.0,
+                priority_explanation="",
+                rank=idx,
+                context=str(sanitized.get("context") or ""),
+                targets=[str(t) for t in (sanitized.get("targets") or []) if str(t).strip()],
+                execute_command=str(sanitized.get("execute_command") or ""),
+                goal=str(sanitized.get("goal") or ""),
+                measured_by=[str(m) for m in (sanitized.get("measured_by") or []) if str(m).strip()],
+                expected_result=ExpectedResult(
+                    metric=expected_metric,
+                    baseline=float(er.get("baseline") or 0.0),
+                    target=float(target),
+                    time_window_days=7,
+                ),
+                baseline_metrics=BaselineMetrics(
+                    orders_7d=float(baseline.get("orders_7d") or 0.0),
+                    revenue_7d=float(baseline.get("revenue_7d") or 0.0),
+                ),
+                normalized_impact_weight=normalized_impact_weight,
+            )
         )
+        score = _deterministic_priority_score(
+            action_type=inferred_type,
+            value=float(sanitized.get("value") or 0.0),
+            daily_loss=float(sanitized.get("daily_loss") or 0.0),
+            summary=summary,
+        )
+        feedback_key = _feedback_key(str(sanitized.get("title") or ""), inferred_type)
+        feedback_multiplier = float((score_feedback.get(feedback_key) or {}).get("multiplier") or 1.0)
+        feedback_multiplier = min(max(feedback_multiplier, 0.6), 1.6)
+        score = round(score * feedback_multiplier, 4)
+        return_penalty, inventory_stagnation_factor = _ranking_factors(action_type=inferred_type, summary=summary)
         actions.append(
             ActionResponse(
                 id=f"action_{idx}",
-                title=str(raw.get("title") or ""),
-                value=float(raw.get("value") or 0.0),
-                daily_loss=float(raw.get("daily_loss") or 0.0),
+                title=str(sanitized.get("title") or ""),
+                value=float(sanitized.get("value") or 0.0),
+                daily_loss=float(sanitized.get("daily_loss") or 0.0),
                 priority_score=score,
                 priority_ratio=1.0,
-                priority_explanation=f"Why this is ranked #{idx}: projected normalized impact weight {normalized_impact_weight:.2f}",
+                priority_explanation=(
+                    "score = (daily_loss * 7) + recoverable_value + "
+                    f"return_penalty({return_penalty:.2f}) + inventory_stagnation_factor({inventory_stagnation_factor:.2f}) "
+                    f"* feedback_multiplier({feedback_multiplier:.2f})"
+                ),
                 rank=idx,
-                context=str(raw.get("context") or ""),
-                targets=[str(t) for t in (raw.get("targets") or []) if str(t).strip()],
-                execute_command=str(raw.get("execute_command") or ""),
-                goal=str(raw.get("goal") or ""),
-                measured_by=[str(m) for m in (raw.get("measured_by") or []) if str(m).strip()],
+                context=str(sanitized.get("context") or ""),
+                targets=[str(t) for t in (sanitized.get("targets") or []) if str(t).strip()],
+                execute_command=str(sanitized.get("execute_command") or ""),
+                goal=str(sanitized.get("goal") or ""),
+                measured_by=[str(m) for m in (sanitized.get("measured_by") or []) if str(m).strip()],
                 expected_result=ExpectedResult(
                     metric=expected_metric,
                     baseline=float(er.get("baseline") or 0.0),
@@ -584,12 +762,103 @@ def _validated_after(timestamp_completed: str) -> bool:
     return datetime.now(timezone.utc) >= (completed_at + timedelta(hours=24))
 
 
+def _apply_score_feedback(state: dict, action: ActionResponse, *, realized_7d: float) -> None:
+    action_type = _infer_action_type(action)
+    key = _feedback_key(action.title, action_type)
+    feedback = dict((state.get("score_feedback", {}) or {}).get(key) or {})
+    current_multiplier = float(feedback.get("multiplier") or 1.0)
+    expected_7d = max(float(action.value), 1.0)
+    performance_ratio = max(min(realized_7d / expected_7d, 1.5), 0.0)
+    # Learn slowly to avoid noisy one-off overfitting.
+    updated_multiplier = round((current_multiplier * 0.8) + ((0.7 + (0.6 * performance_ratio)) * 0.2), 4)
+    updated_multiplier = min(max(updated_multiplier, 0.6), 1.6)
+    score_feedback = dict(state.get("score_feedback", {}) or {})
+    score_feedback[key] = {
+        "multiplier": updated_multiplier,
+        "last_realized_7d": round(realized_7d, 2),
+        "last_expected_7d": round(float(action.value), 2),
+        "updated_at": _utc_now_iso(),
+    }
+    state["score_feedback"] = score_feedback
+
+
+def _run_verification_loop(*, store_id: int, state: dict, actions: list[ActionResponse]) -> list[dict]:
+    action_map = {a.id: a for a in actions}
+    now = datetime.now(timezone.utc)
+    completed = list(state.get("completed_actions", []))
+    verification_rows: list[dict] = []
+    for row in completed:
+        action_id = str(row.get("action_id") or "")
+        if not action_id:
+            continue
+        completed_at_raw = str(row.get("timestamp_completed") or "").strip()
+        if not completed_at_raw:
+            continue
+        try:
+            completed_at = _parse_utc(completed_at_raw)
+        except ValueError:
+            continue
+        elapsed_hours = max((now - completed_at).total_seconds() / 3600.0, 0.0)
+        baseline = row.get("baseline_metrics") or {"orders_7d": 0.0, "revenue_7d": 0.0}
+        current = _store_snapshot_metrics(store_id)
+        delta_payload = _build_delta_payload(
+            {"orders_7d": float(baseline.get("orders_7d") or 0.0), "revenue_7d": float(baseline.get("revenue_7d") or 0.0)},
+            current,
+        )
+        actual_recovered_7d = round(max(float(delta_payload["raw_delta"]["revenue_7d"]), 0.0), 2)
+        state_row = _get_action_state_row(state, action_id)
+        state_row["last_verification_at"] = _utc_now_iso()
+        if elapsed_hours >= 24:
+            state_row["impact_realized_24h"] = round(actual_recovered_7d / 7.0, 2)
+        if elapsed_hours >= (24 * 7):
+            state_row["impact_realized_7d"] = actual_recovered_7d
+            state_row["status"] = "verified"
+            action_obj = action_map.get(action_id)
+            if action_obj is not None:
+                _apply_score_feedback(state, action_obj, realized_7d=actual_recovered_7d)
+        verification_rows.append(
+            {
+                "action_id": action_id,
+                "window": "7d" if elapsed_hours >= (24 * 7) else ("24h" if elapsed_hours >= 24 else "pending"),
+                "predicted_recovered_7d": round(float(row.get("value") or 0.0), 2),
+                "actual_recovered_7d": actual_recovered_7d,
+                "delta": round(actual_recovered_7d - float(row.get("value") or 0.0), 2),
+            }
+        )
+    state["verification_history"] = verification_rows
+    return verification_rows
+
+
+def _decision_block_is_computable(*, recoverable_7d: float, risk_7d: float) -> bool:
+    return recoverable_7d >= 0.0 and risk_7d >= 0.0
+
+
+def _validate_report_contract(contract: dict) -> None:
+    actions = list(contract.get("actions") or [])
+    if any("confidence" in a for a in actions):
+        raise HTTPException(status_code=500, detail="Invalid report contract: confidence field is forbidden without explicit formula contract.")
+    traceability = contract.get("_traceability") or {}
+    numeric_paths = list(traceability.get("numeric_paths") or [])
+    if not numeric_paths:
+        raise HTTPException(status_code=500, detail="Invalid report contract: missing numeric traceability map.")
+    for path_row in numeric_paths:
+        if not str((path_row or {}).get("source_rule_id") or "").strip():
+            raise HTTPException(status_code=500, detail="Invalid report contract: numeric field missing source_rule_id.")
+    for action in actions:
+        has_diagnosis = "diagnosis" in action
+        has_intervention = "intervention" in action
+        has_expected = isinstance(action.get("expected_outcome"), dict)
+        if not (has_diagnosis and has_intervention and has_expected):
+            raise HTTPException(status_code=500, detail="Invalid report contract: action layer separation violated.")
+
+
 @app.get("/api/actions")
 def api_actions(store_id: int = 1) -> list[ActionResponse]:
     actions = _to_canonical_actions(store_id)
     state = _load_state(store_id)
     for action in actions:
         _ensure_action_started(state, action.id)
+        _get_action_state_row(state, action.id)
     _save_state(store_id, state)
     return actions
 
@@ -620,15 +889,89 @@ def api_complete_action(payload: CompleteActionRequest, store_id: int = 1) -> di
         }
     )
     state["completed_actions"] = completed
+    row = _get_action_state_row(state, payload.action_id)
+    row["status"] = "executed"
+    row["executed_at"] = _utc_now_iso()
+    row["updated_at"] = _utc_now_iso()
+    _append_action_event(state, payload.action_id, "executed", {"source": "api_complete_action"})
     _save_state(store_id, state)
     return {"status": "completed", "action_id": payload.action_id}
 
 
-@app.get("/api/results")
-def api_results(store_id: int = 1) -> dict:
+@app.post("/api/action-state")
+def api_update_action_state(payload: UpdateActionStateRequest, store_id: int = 1) -> dict:
+    actions = api_actions(store_id)
+    action = next((a for a in actions if a.id == payload.action_id), None)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    normalized = str(payload.status or "").strip().lower()
+    if normalized not in {"execute", "snooze", "ignore"}:
+        raise HTTPException(status_code=400, detail="status must be one of: execute, snooze, ignore")
+    state = _load_state(store_id)
+    row = _get_action_state_row(state, payload.action_id)
+    row["updated_at"] = _utc_now_iso()
+    if normalized == "execute":
+        row["status"] = "executed"
+        row["executed_at"] = _utc_now_iso()
+        _append_action_event(state, payload.action_id, "executed", {"note": payload.note or "", "source": "api_action_state"})
+    elif normalized == "snooze":
+        snooze_hours = max(int(payload.snooze_hours or 24), 1)
+        row["status"] = "snoozed"
+        row["snoozed_until"] = (datetime.now(timezone.utc) + timedelta(hours=snooze_hours)).isoformat()
+        _append_action_event(state, payload.action_id, "snoozed", {"hours": snooze_hours, "note": payload.note or ""})
+    else:
+        row["status"] = "ignored"
+        row["ignored_at"] = _utc_now_iso()
+        _append_action_event(state, payload.action_id, "ignored", {"note": payload.note or ""})
+    _save_state(store_id, state)
+    return {"action_id": payload.action_id, "status": row["status"], "updated_at": row["updated_at"]}
+
+
+@app.post("/api/execute-action")
+def api_execute_action(payload: ExecuteActionRequest, store_id: int = 1) -> dict:
+    actions = api_actions(store_id)
+    action = next((a for a in actions if a.id == payload.action_id), None)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    state = _load_state(store_id)
+    queue = list(state.get("execution_queue", []))
+    queue_item = {
+        "action_id": payload.action_id,
+        "queued_at": _utc_now_iso(),
+        "mode": str(payload.mode or "manual").strip().lower(),
+        "execute_command": action.execute_command,
+        "status": "queued",
+    }
+    queue.append(queue_item)
+    state["execution_queue"] = queue
+    _append_action_event(state, payload.action_id, "execution_queued", {"mode": queue_item["mode"]})
+    row = _get_action_state_row(state, payload.action_id)
+    row["status"] = "executed"
+    row["executed_at"] = _utc_now_iso()
+    row["updated_at"] = _utc_now_iso()
+    _save_state(store_id, state)
+    return {"status": "queued", "action_id": payload.action_id, "queue_size": len(queue)}
+
+
+@app.get("/api/verification")
+def api_verification(store_id: int = 1) -> dict:
     actions = _to_canonical_actions(store_id)
     state = _load_state(store_id)
+    verification_rows = _run_verification_loop(store_id=store_id, state=state, actions=actions)
+    _save_state(store_id, state)
+    return {"rows": verification_rows, "count": len(verification_rows)}
+
+
+@app.get("/api/results")
+def api_results(store_id: int = 1) -> dict:
+    summary = build_summary(store_id)
+    actions = _to_canonical_actions(store_id)
+    state = _load_state(store_id)
+    for action in actions:
+        _get_action_state_row(state, action.id)
     completed = list(state.get("completed_actions", []))
+    action_states = state.get("action_states", {}) if isinstance(state, dict) else {}
+    verification_rows = _run_verification_loop(store_id=store_id, state=state, actions=actions)
     total_revenue_recovered_7d = round(sum(float(x.get("value") or 0.0) for x in completed), 2)
     total_loss_prevented_7d = round(sum(float(x.get("daily_loss") or 0.0) * 7.0 for x in completed), 2)
     actions_completed = len(completed)
@@ -637,6 +980,7 @@ def api_results(store_id: int = 1) -> dict:
         4,
     )
     enriched_actions = [_build_enriched_action(action) for action in actions]
+    completed_ids = {str(x.get("action_id") or "") for x in completed if isinstance(x, dict)}
     total_daily_loss = round(sum(float(x["daily_loss"]) for x in enriched_actions), 2)
     weekly_recoverable = round(sum(float(x["value"]) for x in enriched_actions), 2)
     weekly_risk = round(total_daily_loss * 7.0, 2)
@@ -692,7 +1036,106 @@ def api_results(store_id: int = 1) -> dict:
         },
         "execution_outcome_heading": "EXECUTION OUTCOME (PROJECTED IMPACT):",
         "final_warning": "Continued inaction will maintain the current loss rate.",
+        "data_quality": {
+            "missing_target_actions": sum(1 for a in enriched_actions if not list(a.get("targets") or [])),
+            "high_return_products_detected": len((summary.get("revenue", {}) or {}).get("high_return_rate", []) or []),
+            "out_of_stock_variants_detected": len((summary.get("inventory", {}) or {}).get("out_of_stock", []) or []),
+        },
     }
+    top_actions_contract: list[dict] = []
+    for idx, enriched_action in enumerate(report_payload["actions"][:2], start=1):
+        targets = [str(t).strip() for t in (enriched_action.get("targets") or []) if str(t).strip()]
+        action_id = str(enriched_action.get("id") or f"action_{idx}")
+        state_raw = str((action_states.get(action_id) or {}).get("status") or ("executed" if action_id in completed_ids else "not_executed"))
+        if state_raw == "verified":
+            execution_state = "verified"
+        elif state_raw == "executed":
+            execution_state = "executed"
+        else:
+            execution_state = "pending"
+        top_actions_contract.append(
+            {
+                "id": action_id,
+                "title": str(enriched_action.get("title") or "").strip(),
+                "priority": 1 if idx == 1 else 2,
+                "diagnosis": str(enriched_action.get("context") or "").strip(),
+                "intervention": str(((enriched_action.get("execution") or {}).get("primary") or "")).strip(),
+                "expected_outcome": {
+                    "daily_impact": round(float(enriched_action.get("daily_loss") or 0.0), 2),
+                    "weekly_value": round(float(enriched_action.get("value") or 0.0), 2),
+                    "risk_if_ignored": round(float(enriched_action.get("daily_loss") or 0.0) * 7.0, 2),
+                    "source_rule_id": "action_impact_rule_v1",
+                },
+                "targets": targets,
+                "state": execution_state,
+            }
+        )
+    status_contract = "critical" if total_daily_loss >= 20 else ("warning" if total_daily_loss > 0 else "healthy")
+    report_contract = {
+        "metadata": {
+            "store_id": str(store_id),
+            "generated_at": report_payload["generated_at"],
+            "status": status_contract,
+        },
+        "financials": {
+            "daily_impact": total_daily_loss,
+            "recoverable_7d": weekly_recoverable,
+            "risk_7d": weekly_risk,
+            "root_cause": _main_cause_from_driver(primary_driver),
+        },
+        "decision_block": (
+            {
+                "execute_value": weekly_recoverable,
+                "ignore_value": weekly_risk,
+                "net_delta": round(weekly_recoverable - weekly_risk, 2),
+                "decision_message": "Executing top actions converts current loss into recovery within 7 days.",
+                "time_window_days": 7,
+                "baseline_assumption": "current_performance_state",
+                "calculation_logic_source": "inventory_return_stagnation_v1",
+            }
+            if _decision_block_is_computable(recoverable_7d=weekly_recoverable, risk_7d=weekly_risk)
+            else {
+                "execute_value": None,
+                "ignore_value": None,
+                "net_delta": None,
+                "decision_message": "Insufficient deterministic inputs for decision block.",
+                "time_window_days": 7,
+                "baseline_assumption": "current_performance_state",
+                "calculation_logic_source": "inventory_return_stagnation_v1",
+            }
+        ),
+        "actions": top_actions_contract,
+        "impact_summary": {
+            "if_execute": (
+                f"Recovered {total_revenue_recovered_7d:.2f}; "
+                f"Protected {total_loss_prevented_7d:.2f}"
+            ),
+            "if_ignore": f"Projected 7-day loss {weekly_risk:.2f}",
+        },
+        "_traceability": {
+            "numeric_paths": [
+                {"path": "financials.daily_impact", "source_rule_id": "inventory_loss_rule_v1"},
+                {"path": "financials.recoverable_7d", "source_rule_id": "recoverable_value_rule_v1"},
+                {"path": "financials.risk_7d", "source_rule_id": "risk_projection_rule_v1"},
+                {"path": "decision_block.execute_value", "source_rule_id": "decision_execute_rule_v1"},
+                {"path": "decision_block.ignore_value", "source_rule_id": "decision_ignore_rule_v1"},
+                {"path": "decision_block.net_delta", "source_rule_id": "decision_delta_rule_v1"},
+            ]
+            + [
+                {"path": f"actions[{idx}].expected_outcome.daily_impact", "source_rule_id": "action_daily_impact_rule_v1"}
+                for idx in range(len(top_actions_contract))
+            ]
+            + [
+                {"path": f"actions[{idx}].expected_outcome.weekly_value", "source_rule_id": "action_weekly_value_rule_v1"}
+                for idx in range(len(top_actions_contract))
+            ]
+            + [
+                {"path": f"actions[{idx}].expected_outcome.risk_if_ignored", "source_rule_id": "action_risk_if_ignored_rule_v1"}
+                for idx in range(len(top_actions_contract))
+            ],
+        },
+    }
+    _validate_report_contract(report_contract)
     for idx, enriched_action in enumerate(report_payload["actions"]):
         if idx == 0:
             enriched_action["hierarchy_label"] = "HIGHEST IMPACT ACTION — EXECUTE FIRST"
@@ -758,6 +1201,9 @@ def api_results(store_id: int = 1) -> dict:
     report_payload["trend_state"] = trend_state
     report_payload["daily_insight"] = daily_insight
     report_payload["daily_comparison"] = daily_comparison
+    report_payload["report_contract"] = report_contract
+    report_payload["action_states"] = action_states
+    report_payload["verification_rows"] = verification_rows
 
     _generate_local_pdf_report(store_id, report_payload)
     response = {
@@ -778,9 +1224,14 @@ def api_results(store_id: int = 1) -> dict:
         "daily_insight": report_payload["daily_insight"],
         "daily_comparison": report_payload["daily_comparison"],
         "continuity_memory": report_payload["daily_comparison"]["continuity_memory"],
+        "report_contract": report_contract,
+        "data_quality": report_payload["data_quality"],
+        "action_states": action_states,
+        "verification_rows": verification_rows,
     }
     _write_local_report(store_id, response)
     _save_result_snapshots(store_id, response)
+    _save_state(store_id, state)
     return response
 
 
@@ -788,29 +1239,22 @@ def api_results(store_id: int = 1) -> dict:
 def api_proof(store_id: int = 1) -> list[dict]:
     results = api_results(store_id)
     proof_rows: list[dict] = []
-    for row in results.get("before_after_comparison", []):
-        status = str(row.get("status") or "pending_validation")
-        before = row.get("before") or {"orders_7d": 0.0, "revenue_7d": 0.0}
-        after = row.get("after") or {"orders_7d": 0.0, "revenue_7d": 0.0}
-        delta = row.get("delta") or {"orders_7d": 0.0, "revenue_7d": 0.0}
-        is_valid = status == "validated"
-        predicted_orders = max(float(before.get("orders_7d") or 0.0) * 0.15, 1.0)
-        predicted_revenue = max(float(before.get("revenue_7d") or 0.0) * 0.12, 25.0)
-        actual_orders = float(delta.get("orders_7d") or 0.0)
-        actual_revenue = float(delta.get("revenue_7d") or 0.0)
+    for row in results.get("verification_rows", []):
+        window = str(row.get("window") or "pending")
+        predicted_revenue = float(row.get("predicted_recovered_7d") or 0.0)
+        actual_revenue = float(row.get("actual_recovered_7d") or 0.0)
         confidence_score = 0.0
-        if is_valid:
-            order_ratio = (actual_orders / predicted_orders) if predicted_orders > 0 else 0.0
-            revenue_ratio = (actual_revenue / predicted_revenue) if predicted_revenue > 0 else 0.0
-            confidence_score = max(min((order_ratio + revenue_ratio) * 50.0, 100.0), 0.0)
+        is_valid = window in {"24h", "7d"}
+        if is_valid and predicted_revenue > 0:
+            confidence_score = max(min((actual_revenue / predicted_revenue) * 100.0, 100.0), 0.0)
         proof_rows.append(
             {
                 "action_id": str(row.get("action_id") or ""),
                 "is_valid": is_valid,
                 "confidence_score": round(confidence_score, 2),
-                "predicted_delta": {"orders": round(predicted_orders, 2), "revenue": round(predicted_revenue, 2)},
-                "actual_delta": {"orders": round(actual_orders, 2), "revenue": round(actual_revenue, 2)},
-                "roi_confirmed": bool(is_valid and (actual_orders > 0 or actual_revenue > 0)),
+                "predicted_delta": {"orders": 0.0, "revenue": round(predicted_revenue, 2)},
+                "actual_delta": {"orders": 0.0, "revenue": round(actual_revenue, 2)},
+                "roi_confirmed": bool(is_valid and actual_revenue > 0),
             }
         )
     return proof_rows

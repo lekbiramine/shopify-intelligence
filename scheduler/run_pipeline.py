@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import re
 
 from config.logging_config import get_logger
 from config import settings
@@ -24,9 +25,8 @@ from etl.load import (
     load_inventory,
 )
 from analytics.summary import build_summary
-from reporting.templates import build_action_email_body, get_action_email_subject, get_email_subject
 from reporting.email_sender import send_store_report_email
-from reporting.pdf_report_v2 import build_structured_actions, create_report_pdf
+from reporting.pdf_report_v2 import build_structured_actions
 from tasks.engine import (
     auto_verify_tasks_from_summary,
     build_report_task_sections,
@@ -183,6 +183,115 @@ def _assert_store_report_delivery_scope(*, store_id: int, report_path: str, reci
         raise RuntimeError(f"Report path is not store-scoped: {report_path}")
 
 
+def _build_email_report_data(*, store_id: int, report_payload: dict, summary: dict) -> dict:
+    contract = report_payload.get("report_contract") or {}
+    metadata = contract.get("metadata") or {}
+    financials = contract.get("financials") or {}
+    decision = contract.get("decision_block") or {}
+    contract_actions = list(contract.get("actions") or [])
+
+    enriched_actions = list(report_payload.get("actions") or [])
+    enriched_by_id = {str(a.get("id") or ""): a for a in enriched_actions if str(a.get("id") or "").strip()}
+    fallback_actions = build_structured_actions(summary, max_actions=5)
+    fallback_by_rank = {idx + 1: row for idx, row in enumerate(fallback_actions)}
+
+    def _parse_target_row(raw_target: object) -> dict | None:
+        text = str(raw_target or "").strip()
+        if not text:
+            return None
+        parts = [p.strip() for p in text.split("—")]
+        name = parts[0] if parts else text
+        sku = "N/A"
+        inventory = None
+        sales_last_90d = None
+        return_rate = None
+        returned_units = None
+
+        sku_match = re.search(r"SKU\s*[:#-]?\s*([A-Za-z0-9_\-]+)", text, flags=re.IGNORECASE)
+        if sku_match:
+            sku = sku_match.group(1).strip()
+        elif name:
+            # Some return-rate alerts include product identifier only (no explicit SKU token).
+            sku = name
+
+        inv_match = re.search(r"inventory\s*[:=]?\s*(\d+)", text, flags=re.IGNORECASE)
+        if inv_match:
+            inventory = int(inv_match.group(1))
+
+        sales_match = re.search(r"sales\s*[:=]?\s*(\d+)\s*(?:in\s*last\s*90d|90d)?", text, flags=re.IGNORECASE)
+        if sales_match:
+            sales_last_90d = int(sales_match.group(1))
+
+        return_match = re.search(r"(\d+(?:\.\d+)?)\s*%\s*return", text, flags=re.IGNORECASE)
+        if return_match:
+            return_rate = float(return_match.group(1))
+        returned_match = re.search(r"(\d+)\s+returned\s+unit", text, flags=re.IGNORECASE)
+        if returned_match:
+            returned_units = int(returned_match.group(1))
+
+        return {
+            "name": name,
+            "sku": sku,
+            "inventory": inventory,
+            "sales_last_90d": sales_last_90d,
+            "return_rate": return_rate,
+            "returned_units": returned_units,
+        }
+
+    actions: list[dict] = []
+    for idx, action in enumerate(contract_actions, start=1):
+        action_id = str(action.get("id") or "")
+        enriched = enriched_by_id.get(action_id, {})
+        fallback = fallback_by_rank.get(idx, {})
+        expected = action.get("expected_outcome") or {}
+
+        raw_targets = list(action.get("targets") or enriched.get("targets") or fallback.get("targets") or [])
+        target_rows = []
+        for target in raw_targets:
+            parsed = _parse_target_row(target)
+            if parsed:
+                target_rows.append(parsed)
+        risk_amount = float(expected.get("risk_if_ignored") or 0.0)
+        weekly_value = float(expected.get("weekly_value") or fallback.get("value") or 0.0)
+        actions.append(
+            {
+                "number": int(action.get("priority") or idx),
+                "type": "PRIMARY REVENUE LEAK" if idx == 1 else "SECONDARY OPTIMIZATION LEAK",
+                "daily_impact": float(expected.get("daily_impact") or fallback.get("daily_loss") or 0.0),
+                "problem": str(action.get("diagnosis") or fallback.get("context") or "Issue is reducing profitability."),
+                "fix": str(action.get("intervention") or fallback.get("execute_command") or "Execute highest-priority action now."),
+                "impact_bullets": [
+                    f"Recover ${weekly_value:,.2f} over 7 days",
+                    f"Protect margin by acting today",
+                ],
+                "risk_bullets": [
+                    f"Lose ${risk_amount:,.2f} in projected 7-day downside",
+                    "Leak compounds each day action is delayed",
+                ],
+                "targets": target_rows,
+                "state": str(action.get("state") or "PENDING"),
+            }
+        )
+
+    generated_at = str(report_payload.get("generated_at") or "")
+    date_label = generated_at.split("T", 1)[0] if "T" in generated_at else generated_at
+    store_name = f"Store {store_id}"
+
+    return {
+        "store_name": store_name,
+        "date": date_label,
+        "status": str(metadata.get("status") or "warning"),
+        "daily_impact": float(financials.get("daily_impact") or 0.0),
+        "total_value": float(financials.get("recoverable_7d") or 0.0),
+        "seven_day_projection": float(financials.get("risk_7d") or 0.0),
+        "root_cause": str(financials.get("root_cause") or report_payload.get("main_cause") or "OPERATIONAL REVENUE LEAK"),
+        "execute_value": float(decision.get("execute_value") or 0.0),
+        "ignore_loss": float(decision.get("ignore_value") or 0.0),
+        "delta": float(decision.get("net_delta") or 0.0),
+        "actions": actions,
+    }
+
+
 @log_execution
 def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
     logger.info("Starting reporting pipeline...", extra={"store_id": store_id})
@@ -192,30 +301,19 @@ def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
     auto_verify_tasks_from_summary(store_id, summary)
     evaluate_completed_task_impacts(store_id, summary)
     collect_due_reminders(store_id)
-    task_sections = build_report_task_sections(store_id, summary)
+    _ = build_report_task_sections(store_id, summary)
     from api.store_intelligence_api import api_results
 
     report_payload = api_results(store_id)
-    pdf_path = create_report_pdf(report_payload, output_dir=f"reports/{store_id}", task_sections=task_sections, store_id=store_id)
-    actions = build_structured_actions(summary, max_actions=5)
+    report_data = _build_email_report_data(store_id=store_id, report_payload=report_payload, summary=summary)
+    report_path = str(Path("reports") / str(store_id) / "latest_results_report.json")
     recipient_email = get_store_contact_email_by_id(store_id) or ""
-    _assert_store_report_delivery_scope(store_id=store_id, report_path=pdf_path, recipient_email=recipient_email)
-    if actions:
-        top_action = actions[0]
-        subject = get_action_email_subject(float(top_action.get("daily_loss") or 0.0))
-        email_body = build_action_email_body(
-            daily_loss=float(top_action.get("daily_loss") or 0.0),
-            top_action=top_action,
-            dashboard_url=f"http://localhost:5173/dashboard?store_id={store_id}",
-        )
-    else:
-        subject = get_email_subject()
-        email_body = "No executable action for today.\nOpen dashboard: http://localhost:5173/dashboard"
-    recipient = send_store_report_email(store_id=store_id, subject=subject, body=email_body, attachment_path=pdf_path)
-    create_report_record(store_id=store_id, report_path=pdf_path, recipient_email=recipient)
+    _assert_store_report_delivery_scope(store_id=store_id, report_path=report_path, recipient_email=recipient_email)
+    recipient = send_store_report_email(store_id=store_id, report_data=report_data)
+    create_report_record(store_id=store_id, report_path=report_path, recipient_email=recipient)
 
-    logger.info("Reporting pipeline completed.", extra={"store_id": store_id, "report_path": pdf_path, "recipient": recipient})
-    return pdf_path, recipient
+    logger.info("Reporting pipeline completed.", extra={"store_id": store_id, "report_path": report_path, "recipient": recipient})
+    return report_path, recipient
 
 
 @log_execution

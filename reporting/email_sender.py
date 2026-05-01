@@ -1,10 +1,10 @@
 import smtplib
 import ssl
 from email.message import EmailMessage
-from pathlib import Path
 from config import settings
 from config.logging_config import get_logger
 from db.queries import get_store_contact_email_by_id
+from reporting.html_report import build_html_report
 
 logger = get_logger(__name__)
 
@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 def build_email(
     subject: str,
     body: str,
-    attachment_path: str | None = None,
+    html_body: str | None = None,
     recipient: str | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
@@ -20,21 +20,12 @@ def build_email(
     msg["From"] = settings.EMAIL_SENDER
     msg["To"] = recipient or settings.EMAIL_RECIPIENT
     msg.set_content(body)
-
-    if attachment_path:
-        file_path = Path(attachment_path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"Attachment file not found: {attachment_path}")
-        msg.add_attachment(
-            file_path.read_bytes(),
-            maintype="application",
-            subtype="pdf",
-            filename=file_path.name,
-        )
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
     return msg
 
 
-def send_email(subject: str, body: str, attachment_path: str | None = None, recipient: str | None = None) -> None:
+def send_email(subject: str, body: str, html_body: str | None = None, recipient: str | None = None) -> None:
     """
     Sends a plain text email via SMTP SSL on port 465.
     """
@@ -42,7 +33,7 @@ def send_email(subject: str, body: str, attachment_path: str | None = None, reci
     logger.info(f"Sending email to {to_addr}...")
     settings.validate_email_env()
 
-    msg = build_email(subject, body, attachment_path=attachment_path, recipient=to_addr)
+    msg = build_email(subject, body, html_body=html_body, recipient=to_addr)
     context = ssl.create_default_context()
 
     try:
@@ -66,13 +57,34 @@ def send_email(subject: str, body: str, attachment_path: str | None = None, reci
         raise
 
 
-def send_store_report_email(*, store_id: int, subject: str, body: str, attachment_path: str) -> str:
+def _format_subject_money(value: float | int | None) -> str:
+    try:
+        amount = float(value or 0.0)
+    except (TypeError, ValueError):
+        amount = 0.0
+    text = f"{amount:,.2f}"
+    return text[:-3] if text.endswith(".00") else text
+
+
+def send_store_report_email(*, store_id: int, report_data: dict) -> str:
     recipient = get_store_contact_email_by_id(store_id)
     if not recipient:
         raise RuntimeError(f"No contact_email configured for store_id={store_id}")
-    send_email(subject, body, attachment_path=attachment_path, recipient=recipient)
+    actions = list(report_data.get("actions") or [])
+    subject = (
+        f"⚡ {str(report_data.get('store_name') or f'Store {store_id}')} — "
+        f"{len(actions)} actions worth ${_format_subject_money(report_data.get('total_value'))} today"
+    )
+    html_content = build_html_report(report_data)
+    plain_body = (
+        f"{report_data.get('store_name') or f'Store {store_id}'} intelligence report\n"
+        f"Date: {report_data.get('date') or ''}\n"
+        f"Actions: {len(actions)}\n"
+        f"Total value: ${_format_subject_money(report_data.get('total_value'))}\n"
+    )
+    send_email(subject, plain_body, html_body=html_content, recipient=recipient)
     logger.info(
         "Store-scoped email sent",
-        extra={"store_id": store_id, "recipient": recipient, "report_path": attachment_path},
+        extra={"store_id": store_id, "recipient": recipient},
     )
     return recipient

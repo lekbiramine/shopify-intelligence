@@ -1142,7 +1142,7 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
     headline = report_data.get("headline") or {}
     status = report_data.get("status") or {}
     execution_required = report_data.get("execution_required") or {}
-    main_cause = str(report_data.get("main_cause") or "").strip()
+    main_cause = str((report_data.get("report_contract") or {}).get("financials", {}).get("root_cause") or report_data.get("main_cause") or "").strip()
     inaction_risk = report_data.get("inaction_risk") or {}
     daily_comparison = report_data.get("daily_comparison") or {}
     baseline_mode = bool(daily_comparison.get("baseline_mode"))
@@ -1154,6 +1154,17 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
     system_impact = report_data.get("system_impact") or {}
     risk = report_data.get("risk") or {}
     generated_text = str(report_data.get("generated_at") or generated_at.isoformat())
+    try:
+        parsed_generated = datetime.fromisoformat(generated_text.replace("Z", "+00:00"))
+        generated_display = parsed_generated.astimezone(timezone.utc).strftime("%b %d, %Y • %H:%M UTC")
+    except ValueError:
+        generated_display = generated_text
+    report_contract = report_data.get("report_contract") or {}
+    contract_meta = report_contract.get("metadata") if isinstance(report_contract, dict) else {}
+    contract_financials = report_contract.get("financials") if isinstance(report_contract, dict) else {}
+    contract_decision = report_contract.get("decision_block") if isinstance(report_contract, dict) else {}
+    contract_top_actions = list(report_contract.get("actions") or []) if isinstance(report_contract, dict) else []
+    contract_impact = report_contract.get("impact_summary") if isinstance(report_contract, dict) else {}
     _PANEL_WIDTH = 520
 
     def _panel(rows: list[list[object]], *, bg: str = "#FFFFFF", border: str = "#E2E8F0", pad: int = 10) -> Table:
@@ -1325,21 +1336,35 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
         return f"{instruction} ({system})"
 
     palette = _theme()
+    normalized_contract_actions = [
+        {
+            "id": str(a.get("id") or ""),
+            "title": str(a.get("title") or ""),
+            "daily_loss": _to_float((a.get("expected_outcome") or {}).get("daily_impact")),
+            "value": _to_float((a.get("expected_outcome") or {}).get("weekly_value")),
+            "targets": list(a.get("targets") or []),
+            "execution": {"primary": str(a.get("intervention") or "")},
+            "context": str(a.get("diagnosis") or ""),
+            "execution_state": str(a.get("state") or "pending"),
+        }
+        for a in contract_top_actions
+    ]
+    action_source = normalized_contract_actions if normalized_contract_actions else list(actions or [])
     ranked_actions = sorted(
-        list(actions or []),
+        action_source,
         key=lambda a: (_to_float(a.get("value")) + (_to_float(a.get("daily_loss")) * 7.0)),
         reverse=True,
     )
     primary_actions = ranked_actions[:2]
     secondary_actions = ranked_actions[2:]
     actions = primary_actions
-    total_daily_loss = sum(_to_float(a.get("daily_loss")) for a in ranked_actions) if isinstance(ranked_actions, list) else 0.0
-    recoverable_7d = sum(_to_float(a.get("value")) for a in ranked_actions) if isinstance(ranked_actions, list) else 0.0
-    risk_7d = _to_float(risk.get("weekly_loss_projection")) if risk else (total_daily_loss * 7.0)
+    total_daily_loss = _to_float(contract_financials.get("daily_impact")) if contract_financials else (sum(_to_float(a.get("daily_loss")) for a in ranked_actions) if isinstance(ranked_actions, list) else 0.0)
+    recoverable_7d = _to_float(contract_financials.get("recoverable_7d")) if contract_financials else (sum(_to_float(a.get("value")) for a in ranked_actions) if isinstance(ranked_actions, list) else 0.0)
+    risk_7d = _to_float(contract_financials.get("risk_7d")) if contract_financials else (_to_float(risk.get("weekly_loss_projection")) if risk else (total_daily_loss * 7.0))
     before_after = list(report_data.get("before_after_comparison") or [])
     proof_by_action = {str(row.get("action_id") or ""): row for row in before_after if isinstance(row, dict)}
 
-    store_status = str(report_data.get("store_status") or "").strip()
+    store_status = str((contract_meta or {}).get("status") or report_data.get("store_status") or "").strip()
     status_level_txt = str(status.get("level") or "").strip().lower()
     if not store_status:
         if "leak" in status_level_txt or total_daily_loss >= 20:
@@ -1355,13 +1380,29 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
     elif "warning" in store_status.lower() or "attention" in store_status.lower():
         status_color = palette["warning"]
 
-    net_diff = recoverable_7d + risk_7d
+    net_diff = recoverable_7d - risk_7d
+    execute_txt = _format_currency(recoverable_7d)
+    ignore_txt = _format_currency(risk_7d)
+    delta_txt = _format_currency(net_diff)
+    if contract_decision:
+        if contract_decision.get("execute_value") is None:
+            execute_txt = "N/A"
+        else:
+            execute_txt = _format_currency(_to_float(contract_decision.get("execute_value")))
+        if contract_decision.get("ignore_value") is None:
+            ignore_txt = "N/A"
+        else:
+            ignore_txt = _format_currency(_to_float(contract_decision.get("ignore_value")))
+        if contract_decision.get("net_delta") is None:
+            delta_txt = "N/A"
+        else:
+            delta_txt = _format_currency(_to_float(contract_decision.get("net_delta")))
     story = [
         _panel(
             [
-                [Paragraph("STORE INTELLIGENCE - EXECUTIVE BRIEF", style["h1"])],
+                [Paragraph("STORE INTELLIGENCE REPORT", style["h1"])],
                 [[_chip(f"Status: {store_status}", bg=status_color, fg="#FFFFFF")]],
-                [Paragraph(f"<font color='#94A3B8'>Generated: {_safe(generated_text)}</font>", style["meta"])],
+                [Paragraph(f"<font color='#94A3B8'>Date: {_safe(generated_display)}</font>", style["meta"])],
             ],
             bg="#0B0F17",
             border="#1F2937",
@@ -1388,44 +1429,32 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
             pad=10,
         ),
         Spacer(1, 8),
-        Paragraph("▌ TOP ACTIONS", style["action_label"]),
+        Paragraph("▌ DECISION BLOCK", style["action_label"]),
         Spacer(1, 6),
         _panel(
             [
-                [Paragraph(f"Execute top actions: projected recovery up to {_format_currency(recoverable_7d)}.", style["action_note"])],
-                [Paragraph(f"No execution: projected downside near {_format_currency(risk_7d)} over 7 days.", style["action_note"])],
-                [Paragraph(f"Summary delta (7d): {_format_currency(net_diff)}", style["action_note"])],
+                [Paragraph(f"EXECUTE  →  {execute_txt}", style["action_note"])],
+                [Paragraph(f"IGNORE   →  -{ignore_txt}" if ignore_txt != "N/A" else "IGNORE   →  N/A", style["action_note"])],
+                [Paragraph(f"DELTA    → {delta_txt}", style["action_note"])],
             ],
             bg="#FFFBEB",
             border="#FBBF24",
             pad=10,
         ),
-        Spacer(1, 6),
-        _panel(
-            [
-                [Paragraph("▌ SYSTEM NOTES", style["action_label"])],
-                [Paragraph(f"Observed impact trend: {_format_currency(total_daily_loss)}/day currently unresolved.", style["muted"])],
-                [Paragraph("Execution signal: no confirmed corrective completion recorded in this cycle.", style["muted"])],
-            ],
-            bg="#F8FAFC",
-            border="#E5E7EB",
-            pad=10,
-        ),
         Spacer(1, 8),
-        _section_header("━━━━━━━━━━━━━━━━━━━━━━ ACTION CARDS ━━━━━━━━━━━━━━━━━━━━━━", style, palette["accent_2"]),
+        _section_header("━━━━━━━━━━━━━━━━━━━━━━ TOP ACTIONS ━━━━━━━━━━━━━━━━━━━━━━", style, palette["accent_2"]),
         Spacer(1, 6),
     ]
 
     for idx, action in enumerate(actions, start=1):
         execution = action.get("execution") or {}
-        risk_if_ignored = action.get("risk_if_ignored") or {}
         targets = [str(t).strip() for t in (action.get("targets") or []) if str(t).strip()][:2]
         systems = list(action.get("systems") or [])
         if idx == 1:
-            action_band = "CRITICAL - PRIMARY LEAK"
+            action_band = "ACTION #1 — PRIMARY REVENUE LEAK"
             chip_bg = "#DC2626"
         elif idx == 2:
-            action_band = "HIGH IMPACT - SECONDARY LEAK"
+            action_band = "ACTION #2 — SECONDARY OPTIMIZATION LEAK"
             chip_bg = "#B45309"
         else:
             action_band = "SECONDARY - OPTIMIZATION"
@@ -1446,24 +1475,11 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
             exec_line = primary if primary else "(not available)"
 
         action_title = _safe(action.get("title")) or "Action"
-        title_clean = action_title.upper().replace(f" ({_format_currency(_to_float(action.get('daily_loss')))}/DAY)", "")
-        action_id = _safe(action.get("id"))
-        proof = proof_by_action.get(action_id, {})
-        proof_status = _safe(proof.get("status")).lower()
-        if proof_status == "validated":
-            execution_status = "confirmed"
-        elif proof_status in {"completed", "executed", "in_progress"}:
-            execution_status = "executed"
-        else:
-            execution_status = "pending"
         action_type = _safe(action.get("type")) or "general"
-        action_target = _safe((targets[0] if targets else action.get("title"))) or "store segment"
-        cta_label = f"Execute {action_type.replace('_', ' ')} action"
         card_bg = "#FFFFFF" if idx == 1 else "#FCFCFD"
         card_border = "#D0D5DD" if idx == 1 else palette["border"]
-        decision_controls = "Execute now | Snooze 24h | Ignore cycle"
-        action_spec = f"{{id: {action_id}, type: {action_type}, target: {action_target}}}"
-        execution_intent = f"{{status: {execution_status}, cta: {cta_label}}}"
+        problem_line = _safe(action.get("context")) or "Impact condition detected."
+        title_clean = action_title.upper().replace(f" ({_format_currency(_to_float(action.get('daily_loss')))}/DAY)", "")
         action_card = _panel(
             [
                 [
@@ -1475,13 +1491,15 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
                 ],
                 [Paragraph(f"▌ ACTION CARD #{idx}", style["action_label"])],
                 [Paragraph(f"<b>{title_clean}</b>", style["h3"])],
-                [Paragraph(f"<b>IMPACT:</b> {_format_currency(_to_float(action.get('daily_loss')))}/day", style["action_note"])],
-                [Paragraph(f"<b>VALUE:</b> {_format_currency(_to_float(action.get('value')))}", style["action_note"])],
-                [Paragraph(f"<b>ACTION SPEC:</b> {action_spec}", style["action_note"])],
-                [Paragraph(f"<b>EXECUTION:</b> {exec_line}", style["action_note"])],
-                [Paragraph(f"<b>EXECUTION INTENT:</b> {execution_intent}", style["small"])],
-                [Paragraph(f"<b>RISK</b>  -{_format_currency(_to_float(action.get('daily_loss')) * 7.0)} projected 7-day loss", style["action_note"])],
-                [Paragraph(f"<b>DECISION CONTROLS:</b> {decision_controls}", style["small"])],
+                [Paragraph(f"Problem: {problem_line}", style["small"])],
+                [Paragraph(f"Fix: {exec_line}", style["action_note"])],
+                [Paragraph("Impact:", style["action_note"])],
+                [Paragraph(f"→ +{_format_currency(_to_float(action.get('daily_loss')))}/day", style["action_note"])],
+                [Paragraph(f"→ +{_format_currency(_to_float(action.get('value')))} in 7 days", style["action_note"])],
+                [Paragraph("Risk if ignored:", style["action_note"])],
+                [Paragraph(f"→ -{_format_currency(_to_float(action.get('daily_loss')) * 7.0)} in 7 days", style["action_note"])],
+                [Paragraph(f"Targets: {', '.join(targets) if targets else 'Store-wide'}", style["small"])],
+                [Paragraph(f"State: {_safe(action.get('execution_state') or 'pending')}", style["small"])],
             ],
             bg=card_bg,
             border=card_border,
@@ -1491,30 +1509,19 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
         story.append(Spacer(1, 6))
 
     if secondary_actions:
-        secondary_lines = [f"• {_safe(a.get('title'))} ({_format_currency(_to_float(a.get('daily_loss')))}/day)" for a in secondary_actions[:4]]
-        story.extend(
-            [
-                Paragraph("▌ SECONDARY INSIGHTS", style["action_label"]),
-                _panel([[Paragraph("<br/>".join(secondary_lines), style["muted"])]], bg="#F8FAFC", border="#E5E7EB", pad=10),
-                Spacer(1, 6),
-            ]
-        )
+        pass
 
     story.extend(
         [
-            _section_header("━━━━━━━━━━━━━━━━━━━━━━ IMPACT ━━━━━━━━━━━━━━━━━━━━━━", style, "#0F172A"),
+            _section_header("━━━━━━━━━━━━━━━━━━━━━━ IMPACT SUMMARY ━━━━━━━━━━━━━━━━━━━━━━", style, "#0F172A"),
             _panel(
                 [
-                    [Paragraph(f"• <b>{_format_currency(_to_float(system_impact.get('total_revenue_recovered_7d')))}</b> recovered", style["action_note"])],
-                    [Paragraph(f"• <b>{_format_currency(_to_float(system_impact.get('total_loss_prevented_7d')))}</b> loss prevented", style["action_note"])],
+                    [Paragraph(f"Execute: {_safe(contract_impact.get('if_execute') or '')}", style["action_note"])],
+                    [Paragraph(f"Ignore: {_safe(contract_impact.get('if_ignore') or '')}", style["action_note"])],
                 ],
                 bg="#F8FAFC",
                 border="#E5E7EB",
             ),
-            Spacer(1, 4),
-            _panel([[Paragraph(f"No-action outcome: {_format_currency(total_daily_loss)}/day loss continues.", style["action_note"])]], bg="#FEF2F2", border="#FCA5A5"),
-            Spacer(1, 4),
-            _panel([[Paragraph("STATUS: LOSS ACTIVE — NO CORRECTIVE ACTION EXECUTED", style["action_label"])]], bg="#FFF7ED", border="#FDBA74", pad=8),
         ]
     )
 
