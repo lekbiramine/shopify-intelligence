@@ -305,7 +305,7 @@ def _run_new_insight_signal(store_id: int, signal_runner) -> dict | None:
         password=settings.DB_PASSWORD,
     ) as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            result = signal_runner(cursor)
+            result = signal_runner(cursor, store_id=store_id)
     if not result or not bool(result.get("detected")):
         return None
     return _build_signal_style_insight(result)

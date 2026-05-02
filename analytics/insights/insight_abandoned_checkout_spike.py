@@ -18,7 +18,7 @@ def _get_cursor(db: Any):
     raise TypeError("db must be a DB cursor or psycopg2 connection")
 
 
-def run_insight(db: Any) -> dict:
+def run_insight(db: Any, *, store_id: int) -> dict:
     cursor, should_close = _get_cursor(db)
     try:
         cursor.execute("SELECT to_regclass('public.abandoned_checkouts') AS table_name;")
@@ -34,6 +34,7 @@ def run_insight(db: Any) -> dict:
                     COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '14 days'
                                       AND created_at < NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END), 0) AS prev_week
                 FROM abandoned_checkouts
+                WHERE store_id = %(store_id)s
             ),
             completed_order_counts AS (
                 SELECT
@@ -45,12 +46,14 @@ def run_insight(db: Any) -> dict:
                                       AND COALESCE(financial_status, '') NOT IN ('voided', 'cancelled')
                                       THEN 1 ELSE 0 END), 0) AS completed_orders_prev_week
                 FROM orders
+                WHERE store_id = %(store_id)s
             ),
             aov AS (
                 SELECT
                     COALESCE(AVG(COALESCE(o2.total_price, 0)), 0) AS store_aov
                 FROM orders o2
                 WHERE o2.created_at >= NOW() - INTERVAL '90 days'
+                  AND o2.store_id = %(store_id)s
                   AND COALESCE(o2.financial_status, '') NOT IN ('voided', 'cancelled')
             )
             SELECT
@@ -62,7 +65,8 @@ def run_insight(db: Any) -> dict:
             FROM abandon a
             CROSS JOIN completed_order_counts oc
             CROSS JOIN aov s;
-            """
+            """,
+            {"store_id": store_id},
         )
         row = cursor.fetchone() or {}
     finally:
@@ -149,4 +153,4 @@ if __name__ == "__main__":
     if not dsn:
         raise RuntimeError("Missing DATABASE_URL or DB_DSN in .env")
     with psycopg2.connect(dsn) as conn:
-        print(run_insight(conn))
+        print(run_insight(conn, store_id=1))

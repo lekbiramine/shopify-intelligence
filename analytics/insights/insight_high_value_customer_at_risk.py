@@ -28,7 +28,7 @@ def _mask_email(email: str) -> str:
     return f"{local[0]}***@{domain}"
 
 
-def run_insight(db: Any) -> dict:
+def run_insight(db: Any, *, store_id: int) -> dict:
     cursor, should_close = _get_cursor(db)
     try:
         cursor.execute(
@@ -45,6 +45,7 @@ def run_insight(db: Any) -> dict:
                     ON o.store_id = c.store_id
                    AND o.customer_id = c.id
                    AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
+                WHERE c.store_id = %(store_id)s
                 GROUP BY c.id, c.first_name, c.last_name, c.email
             ),
             ranked AS (
@@ -73,7 +74,8 @@ def run_insight(db: Any) -> dict:
             store_aov AS (
                 SELECT COALESCE(AVG(COALESCE(total_price, 0)), 0) AS value
                 FROM orders
-                WHERE COALESCE(financial_status, '') NOT IN ('voided', 'cancelled')
+                WHERE store_id = %(store_id)s
+                  AND COALESCE(financial_status, '') NOT IN ('voided', 'cancelled')
             )
             SELECT
                 COALESCE(COUNT(*), 0) AS customer_count,
@@ -81,7 +83,8 @@ def run_insight(db: Any) -> dict:
                 COALESCE(AVG(COALESCE(a.days_since_order, 0)), 0) AS days_since_last_order,
                 COALESCE((SELECT value FROM store_aov), 0) AS store_aov
             FROM at_risk_vips a;
-            """
+            """,
+            {"store_id": store_id},
         )
         summary = cursor.fetchone() or {}
 
@@ -99,6 +102,7 @@ def run_insight(db: Any) -> dict:
                     ON o.store_id = c.store_id
                    AND o.customer_id = c.id
                    AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
+                WHERE c.store_id = %(store_id)s
                 GROUP BY c.id, c.first_name, c.last_name, c.email
             ),
             ranked AS (
@@ -123,7 +127,8 @@ def run_insight(db: Any) -> dict:
               AND EXTRACT(EPOCH FROM (NOW() - last_order_date)) / 86400.0 BETWEEN 45 AND 90
             ORDER BY lifetime_spend DESC
             LIMIT 5;
-            """
+            """,
+            {"store_id": store_id},
         )
         raw_targets = cursor.fetchall() or []
     finally:
@@ -204,4 +209,4 @@ if __name__ == "__main__":
     if not dsn:
         raise RuntimeError("Missing DATABASE_URL or DB_DSN in .env")
     with psycopg2.connect(dsn) as conn:
-        print(run_insight(conn))
+        print(run_insight(conn, store_id=1))

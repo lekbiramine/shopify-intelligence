@@ -108,7 +108,7 @@ def _log_all_registered_insight_signals(store_id: int) -> None:
             password=settings.DB_PASSWORD,
         ) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                raw = runner(cursor)
+                raw = runner(cursor, store_id=store_id)
         detected = bool(raw.get("detected")) if isinstance(raw, dict) else False
         _log_insight_detection_line(slug, detected)
 
@@ -796,6 +796,7 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
 
 @log_execution
 def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
+    logger.info("[store_id=%s] Running report for shop_domain", store_id)
     logger.info("Starting reporting pipeline...", extra={"store_id": store_id})
 
     _log_all_registered_insight_signals(store_id)

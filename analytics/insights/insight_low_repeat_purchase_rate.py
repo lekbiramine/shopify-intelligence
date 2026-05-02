@@ -18,7 +18,7 @@ def _get_cursor(db: Any):
     raise TypeError("db must be a DB cursor or psycopg2 connection")
 
 
-def run_insight(db: Any) -> dict:
+def run_insight(db: Any, *, store_id: int) -> dict:
     cursor, should_close = _get_cursor(db)
     try:
         cursor.execute(
@@ -29,6 +29,7 @@ def run_insight(db: Any) -> dict:
                     COUNT(*) AS order_count_90d
                 FROM orders o
                 WHERE o.created_at >= NOW() - INTERVAL '90 days'
+                  AND o.store_id = %(store_id)s
                   AND o.customer_id IS NOT NULL
                   AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
                 GROUP BY o.customer_id
@@ -38,6 +39,7 @@ def run_insight(db: Any) -> dict:
                     COALESCE(AVG(COALESCE(o.total_price, 0)), 0) AS store_aov
                 FROM orders o
                 WHERE o.created_at >= NOW() - INTERVAL '90 days'
+                  AND o.store_id = %(store_id)s
                   AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
             )
             SELECT
@@ -46,7 +48,8 @@ def run_insight(db: Any) -> dict:
                 COALESCE(SUM(CASE WHEN c.order_count_90d = 1 THEN 1 ELSE 0 END), 0) AS one_time_buyers,
                 COALESCE((SELECT store_aov FROM order_metrics), 0) AS store_aov
             FROM customer_order_counts c;
-            """
+            """,
+            {"store_id": store_id},
         )
         row = cursor.fetchone() or {}
     finally:
@@ -123,4 +126,4 @@ if __name__ == "__main__":
     if not dsn:
         raise RuntimeError("Missing DATABASE_URL or DB_DSN in .env")
     with psycopg2.connect(dsn) as conn:
-        print(run_insight(conn))
+        print(run_insight(conn, store_id=1))

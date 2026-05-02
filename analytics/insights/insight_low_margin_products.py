@@ -20,7 +20,7 @@ def _get_cursor(db: Any):
     raise TypeError("db must be a DB cursor or psycopg2 connection")
 
 
-def run_insight(db: Any) -> dict:
+def run_insight(db: Any, *, store_id: int) -> dict:
     cursor, should_close = _get_cursor(db)
     try:
         cursor.execute(
@@ -32,6 +32,7 @@ def run_insight(db: Any) -> dict:
                     COALESCE(p.status, 'active') AS status
                 FROM products p
                 WHERE COALESCE(p.status, 'active') = 'active'
+                  AND p.store_id = %(store_id)s
             ),
             product_prices AS (
                 SELECT
@@ -40,7 +41,7 @@ def run_insight(db: Any) -> dict:
                     COALESCE(v.sku, '') AS sku,
                     COALESCE(AVG(COALESCE(v.price, 0)), 0) AS avg_price
                 FROM active_products ap
-                LEFT JOIN variants v ON v.product_id = ap.product_id
+                LEFT JOIN variants v ON v.store_id = %(store_id)s AND v.product_id = ap.product_id
                 GROUP BY ap.product_id, ap.product_name, v.sku
             ),
             sales_90d AS (
@@ -48,8 +49,9 @@ def run_insight(db: Any) -> dict:
                     oi.product_id,
                     COALESCE(SUM(COALESCE(oi.quantity, 0)), 0) AS units_sold
                 FROM order_items oi
-                LEFT JOIN orders o ON o.id = oi.order_id
+                LEFT JOIN orders o ON o.store_id = oi.store_id AND o.id = oi.order_id
                 WHERE o.created_at >= NOW() - INTERVAL '90 days'
+                  AND oi.store_id = %(store_id)s
                   AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
                 GROUP BY oi.product_id
             ),
@@ -57,8 +59,9 @@ def run_insight(db: Any) -> dict:
                 SELECT
                     COALESCE(AVG(COALESCE(v.price, 0)), 0) AS avg_store_price
                 FROM variants v
-                LEFT JOIN products p ON p.id = v.product_id
+                LEFT JOIN products p ON p.store_id = v.store_id AND p.id = v.product_id
                 WHERE COALESCE(p.status, 'active') = 'active'
+                  AND v.store_id = %(store_id)s
             ),
             flagged AS (
                 SELECT
@@ -84,7 +87,8 @@ def run_insight(db: Any) -> dict:
             FROM flagged f
             ORDER BY f.units_sold DESC, f.price ASC
             LIMIT 1;
-            """
+            """,
+            {"store_id": store_id},
         )
         flagged = cursor.fetchone() or {}
     finally:
@@ -163,4 +167,4 @@ if __name__ == "__main__":
     if not dsn:
         raise RuntimeError("Missing DATABASE_URL or DB_DSN in .env")
     with psycopg2.connect(dsn) as conn:
-        print(run_insight(conn))
+        print(run_insight(conn, store_id=1))
