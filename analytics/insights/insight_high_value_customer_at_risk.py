@@ -42,7 +42,8 @@ def run_insight(db: Any) -> dict:
                     MAX(o.created_at) AS last_order_date
                 FROM customers c
                 LEFT JOIN orders o
-                    ON o.customer_id = c.id
+                    ON o.store_id = c.store_id
+                   AND o.customer_id = c.id
                    AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
                 GROUP BY c.id, c.first_name, c.last_name, c.email
             ),
@@ -95,7 +96,8 @@ def run_insight(db: Any) -> dict:
                     MAX(o.created_at) AS last_order_date
                 FROM customers c
                 LEFT JOIN orders o
-                    ON o.customer_id = c.id
+                    ON o.store_id = c.store_id
+                   AND o.customer_id = c.id
                    AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
                 GROUP BY c.id, c.first_name, c.last_name, c.email
             ),

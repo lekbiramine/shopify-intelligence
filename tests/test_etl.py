@@ -1,6 +1,13 @@
 from unittest.mock import patch
 import requests
-from etl.extract import fetch_products, fetch_customers, fetch_orders
+
+from etl.extract import (
+    deduplicate_customers_from_orders,
+    fetch_products,
+    fetch_customers,
+    fetch_orders,
+    _fetch_orders_graphql,
+)
 from etl.transform import (
     transform_products,
     transform_customers,
@@ -18,10 +25,41 @@ def test_fetch_products_returns_list():
         assert len(result) == 1
 
 
-def test_fetch_customers_returns_list():
-    with patch("etl.extract.paginated_get", return_value=[{"id": 1, "email": "a@b.com"}]):
-        result = fetch_customers(shop_domain="test-shop.myshopify.com", access_token="token")
-        assert isinstance(result, list)
+def test_fetch_customers_returns_empty_list():
+    result = fetch_customers(shop_domain="test-shop.myshopify.com", access_token="token")
+    assert result == []
+
+
+def test_deduplicate_customers_from_orders():
+    raw_orders = [
+        {
+            "id": 1,
+            "customer": {
+                "id": 10,
+                "email": "a@b.com",
+                "first_name": "A",
+                "last_name": "B",
+                "orders_count": 2,
+                "total_spent": 50.0,
+            },
+        },
+        {
+            "id": 2,
+            "customer": {
+                "id": 10,
+                "email": "a@b.com",
+                "first_name": "A",
+                "last_name": "B",
+                "orders_count": 3,
+                "total_spent": 80.0,
+            },
+        },
+    ]
+    out = deduplicate_customers_from_orders(raw_orders)
+    assert len(out) == 1
+    assert out[0]["id"] == 10
+    assert out[0]["orders_count"] == 3
+    assert out[0]["total_spent"] == 80.0
 
 
 def test_fetch_orders_returns_list():
@@ -30,35 +68,114 @@ def test_fetch_orders_returns_list():
         assert isinstance(result, list)
 
 
-def test_fetch_customers_falls_back_to_graphql_on_403():
-    http_error = requests.HTTPError(response=type("Resp", (), {"status_code": 403})())
-    with patch("etl.extract.paginated_get", side_effect=http_error), patch(
-        "etl.extract._fetch_customers_graphql",
-        return_value=[{"id": 1, "email": "a@b.com"}],
-    ):
-        result = fetch_customers(shop_domain="test-shop.myshopify.com", access_token="token")
-        assert isinstance(result, list)
-        assert len(result) == 1
+def test_fetch_orders_graphql_parses_customer_line_items_and_refunds():
+    gql_page = {
+        "data": {
+            "orders": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "edges": [
+                    {
+                        "node": {
+                            "id": "gid://shopify/Order/9001",
+                            "legacyResourceId": "9001",
+                            "createdAt": "2024-06-01T00:00:00Z",
+                            "updatedAt": "2024-06-01T00:00:00Z",
+                            "displayFinancialStatus": "PAID",
+                            "displayFulfillmentStatus": "FULFILLED",
+                            "customer": {
+                                "id": "gid://shopify/Customer/7001",
+                                "legacyResourceId": "7001",
+                                "email": "buyer@example.com",
+                                "firstName": "Bo",
+                                "lastName": "UGHT",
+                                "numberOfOrders": 5,
+                                "amountSpent": {"amount": "199.50"},
+                            },
+                            "totalPriceSet": {"shopMoney": {"amount": "49.99"}},
+                            "currentSubtotalPriceSet": {"shopMoney": {"amount": "49.99"}},
+                            "currentTotalDiscountsSet": {"shopMoney": {"amount": "0"}},
+                            "lineItems": {
+                                "edges": [
+                                    {
+                                        "node": {
+                                            "id": "gid://shopify/LineItem/8001",
+                                            "quantity": 3,
+                                            "discountedUnitPriceSet": {"shopMoney": {"amount": "10.00"}},
+                                            "variant": {
+                                                "id": "gid://shopify/ProductVariant/5001",
+                                                "legacyResourceId": "5001",
+                                                "sku": "SKU-A",
+                                                "product": {
+                                                    "id": "gid://shopify/Product/4001",
+                                                    "legacyResourceId": "4001",
+                                                    "title": "Widget",
+                                                },
+                                            },
+                                        }
+                                    }
+                                ]
+                            },
+                            "refunds": [
+                                {
+                                    "id": "gid://shopify/Refund/1",
+                                    "createdAt": "2024-06-02T00:00:00Z",
+                                    "refundLineItems": {
+                                        "edges": [
+                                            {
+                                                "node": {
+                                                    "quantity": 1,
+                                                    "lineItem": {"id": "gid://shopify/LineItem/8001"},
+                                                }
+                                            }
+                                        ]
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+            }
+        }
+    }
+
+    with patch("etl.extract._post_graphql", return_value=gql_page):
+        orders = _fetch_orders_graphql(shop_domain="test-shop.myshopify.com", access_token="t")
+    assert len(orders) == 1
+    o = orders[0]
+    assert o["id"] == 9001
+    assert o["customer"]["id"] == 7001
+    assert o["customer"]["email"] == "buyer@example.com"
+    assert o["financial_status"] == "paid"
+    assert len(o["line_items"]) == 1
+    assert o["line_items"][0]["quantity"] == 2
+    assert o["line_items"][0]["title"] == "Widget"
+    customers = deduplicate_customers_from_orders(orders)
+    assert len(customers) == 1
+    assert customers[0]["id"] == 7001
 
 
 def test_fetch_orders_falls_back_to_graphql_on_403():
     http_error = requests.HTTPError(response=type("Resp", (), {"status_code": 403})())
-    with patch("etl.extract.paginated_get", side_effect=http_error), patch(
-        "etl.extract._fetch_orders_graphql",
-        return_value=[{"id": 1, "total_price": "99.99"}],
+    with (
+        patch("etl.extract.paginated_get", side_effect=http_error),
+        patch("etl.extract._orders_root_accessible_via_graphql", return_value=True),
+        patch(
+            "etl.extract._fetch_orders_graphql",
+            return_value=[{"id": 1, "total_price": "99.99"}],
+        ),
     ):
         result = fetch_orders(shop_domain="test-shop.myshopify.com", access_token="token")
         assert isinstance(result, list)
         assert len(result) == 1
 
 
-def test_fetch_customers_returns_empty_when_graphql_fallback_fails():
+def test_fetch_orders_returns_empty_when_graphql_order_root_denied():
     http_error = requests.HTTPError(response=type("Resp", (), {"status_code": 403})())
-    with patch("etl.extract.paginated_get", side_effect=http_error), patch(
-        "etl.extract._fetch_customers_graphql",
-        side_effect=RuntimeError("ACCESS_DENIED"),
+    with (
+        patch("etl.extract.paginated_get", side_effect=http_error),
+        patch("etl.extract._orders_root_accessible_via_graphql", return_value=False),
     ):
-        result = fetch_customers(shop_domain="test-shop.myshopify.com", access_token="token")
+        result = fetch_orders(shop_domain="test-shop.myshopify.com", access_token="token")
         assert result == []
 
 

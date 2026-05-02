@@ -19,6 +19,9 @@ SHOPIFY_MAX_RESULTS_PER_PAGE = 250  # Shopify max per request
 EMAIL_SUBJECT = "Daily Store Intelligence Report"
 EMAIL_MAX_RETRIES = 3
 
+# Report / intelligence contract (HTML email + API contract actions)
+REPORT_EMAIL_MAX_ACTIONS = 5
+
 # Pipeline settings
 PIPELINE_RETRY_ATTEMPTS = 3
 PIPELINE_RETRY_DELAY = 5          # seconds

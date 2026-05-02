@@ -139,6 +139,96 @@ def get_action_advice(action_type: str, metrics: dict) -> dict:
             ),
         }
 
+    if normalized_type == "duplicate_orders":
+        customer_id = _to_str(m.get("customer_id_display"), "").strip()
+        dup_n = max(_to_int(m.get("duplicate_order_entries"), 0), 0)
+        exposure = _to_float(m.get("duplicate_charge_exposure"), 0.0)
+        label = customer_id if customer_id else "a customer"
+        return {
+            "headline": (
+                f"Possible duplicate billing for Customer {customer_id}: {dup_n} same-day identical-total charges"
+                if customer_id
+                else f"{dup_n} orders look like duplicate charges at the same amount"
+            ),
+            "context": (
+                "When two captures share the same day, customer, and tender amount, fulfillment and support costs double "
+                "while trust drops. Payment processors also flag unusually high reversal volume when duplicates sit unresolved."
+                + (
+                    f" Estimated exposure flagged for this cohort: ${exposure:,.2f}."
+                    if exposure > 0
+                    else ""
+                )
+            ),
+            "playbook": [
+                (
+                    f"Open Shopify admin → Orders and filter by Customer ID {customer_id}, same calendar day."
+                    if customer_id
+                    else "Shopify Admin → Orders: filter by duplicated customer/date and duplicate total."
+                ),
+                "Refund the duplicate authorization immediately unless both fulfillments intentionally shipped.",
+                "Call or email the customer with a concise apology plus proof of reversal to prevent chargebacks.",
+                "Add an internal rule: nightly job that flags duplicates by (customer_id, day, gross total) auto-holds fulfillment.",
+            ],
+            "benchmark": (
+                "Card networks penalize merchants with elevated duplicate‑capture disputes; proactive refunds usually cost less than retrieval fees."
+            ),
+            "urgency": (
+                f"Customer {label} sees two charges on their statement tonight. Acting before they dispute preserves processing health."
+                if dup_n >= 2
+                else "Verify both charges intentionally before issuing any refund."
+            ),
+        }
+
+    if normalized_type == "revenue_concentration":
+        pct = _to_float(m.get("concentration_pct"), 0.0)
+        top2_rev = _to_float(m.get("top_two_revenue_share"), 0.0)
+        pool = _to_float(m.get("loyal_revenue_pool"), 0.0)
+        return {
+            "headline": f"Too much loyal-club revenue depends on too few shoppers ({pct:.1f}% in your top‑2 cohort)",
+            "context": (
+                f"${top2_rev:,.2f} of roughly ${pool:,.2f} monitored loyal-club revenue is concentrated in two accounts. "
+                "If either pauses unexpectedly, forecasting and cash planning swing hard with little warning."
+            ),
+            "playbook": [
+                "Identify the fifth-through-tenth ranked loyal purchasers and activate a repeatable second-order offer this week.",
+                "Launch a SKU bundling ladder so large buyers naturally recruit mid-tier purchasers into higher frequency.",
+                "Document a lightweight VIP diversification metric (top‑N share %) and publish it beside weekly revenue summaries.",
+                "Shift paid remarketing budgets toward cohorts resembling your tier‑2 shoppers until concentration trends down.",
+            ],
+            "benchmark": "Sophisticated Shopify Plus operators usually keep flagship loyal revenue below ~35% attributable to two individuals.",
+            "urgency": (
+                "Concentrated revenue is benign until one buyer churns silently—then forecasting confidence collapses overnight."
+            ),
+        }
+
+    if normalized_type == "abnormal_discount":
+        order_hint = _to_str(m.get("order_id_hint"), "").strip()
+        disc = _to_float(m.get("discount_pct_hint"), 0.0)
+        leak = _to_float(m.get("estimated_leak_usd"), 0.0)
+        return {
+            "headline": (
+                f"Order {order_hint or 'detected'} has an extreme {disc:.1f}% discount — reconcile before more ship"
+                if disc > 0
+                else "Order-level discount anomaly detected — validate before fulfilment ramps"
+            ),
+            "context": (
+                "Stacked automatic discounts can silently torch margin on trending SKUs."
+                + (f" Flagged bleed this period ≈ ${leak:.2f}." if leak > 0 else "")
+            ),
+            "playbook": [
+                (
+                    f"Locate order {order_hint} → Discounts pane and screenshot every applied rule."
+                    if order_hint
+                    else "Search recent high-discount orders in Admin and capture each discount stack trace."
+                ),
+                "Disable overlapping scripts or Shopify Functions until the stack reproduces cleanly in draft checkout.",
+                "Issue a corrective partial capture or goodwill credit only after finance signs the reversal.",
+                "Add a Shopify Flow pause when effective discount_pct > configured guardrail.",
+            ],
+            "benchmark": "Operational teams benchmarking DTC storefronts intervene when single-order discounts eclipse 60% unless part of audited clearance flows.",
+            "urgency": "Every duplicated shipment multiplies reversible COGS—the earlier you freeze picking, the cheaper the remediation.",
+        }
+
     if normalized_type == "low_repeat_purchase_rate":
         repeat_rate = max(_to_float(m.get("repeat_rate"), 0.0), 0.0)
         one_time_buyers = _to_int(m.get("one_time_buyers"), 0)

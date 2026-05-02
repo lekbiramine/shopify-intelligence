@@ -1,13 +1,18 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
+from collections import defaultdict
+
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 from config.logging_config import get_logger
+from config import constants as app_constants
 from config import settings
 from db.queries import create_report_record, get_store_contact_email_by_id, update_store_auth_tokens
 from etl.extract import (
+    deduplicate_customers_from_orders,
     fetch_products,
-    fetch_customers,
     fetch_orders,
     fetch_inventory_levels,
 )
@@ -57,7 +62,12 @@ REGISTERED_INSIGHT_ACTIONS = [
     "high_value_customer_at_risk",
     "abandoned_checkout_spike",
     "low_margin_products",
+    "duplicate_orders",
+    "revenue_concentration",
+    "abnormal_discount",
 ]
+
+REGISTERED_INSIGHT_ACTION_TYPES = frozenset(REGISTERED_INSIGHT_ACTIONS)
 
 REGISTERED_INSIGHT_RUNNERS = (
     run_low_repeat_purchase_rate_insight,
@@ -65,6 +75,42 @@ REGISTERED_INSIGHT_RUNNERS = (
     run_abandoned_checkout_spike_insight,
     run_low_margin_products_insight,
 )
+
+
+def _log_insight_detection_line(slug: str, detected: bool) -> None:
+    print(f"[insight] {slug} -> {'detected' if detected else 'not triggered'}", flush=True)
+
+
+def _log_all_registered_insight_signals(store_id: int) -> None:
+    """Diagnostic print after each registered insight runner (legacy + new SQL signals)."""
+    from analytics.insights import insight_churned_customers, insight_dead_inventory, insight_high_return_rate
+
+    result = insight_churned_customers(store_id)
+    _log_insight_detection_line("churned_customers", bool(result))
+
+    high_rr = insight_high_return_rate(store_id)
+    _log_insight_detection_line("high_return_rate", len(high_rr) > 0)
+
+    dead_inv = insight_dead_inventory(store_id)
+    _log_insight_detection_line("dead_inventory", len(dead_inv) > 0)
+
+    for slug, runner in (
+        ("low_repeat_purchase_rate", run_low_repeat_purchase_rate_insight),
+        ("high_value_customer_at_risk", run_high_value_customer_at_risk_insight),
+        ("abandoned_checkout_spike", run_abandoned_checkout_spike_insight),
+        ("low_margin_products", run_low_margin_products_insight),
+    ):
+        with psycopg2.connect(
+            host=settings.DB_HOST,
+            port=settings.DB_PORT,
+            dbname=settings.DB_NAME,
+            user=settings.DB_USER,
+            password=settings.DB_PASSWORD,
+        ) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                raw = runner(cursor)
+        detected = bool(raw.get("detected")) if isinstance(raw, dict) else False
+        _log_insight_detection_line(slug, detected)
 
 
 def _ensure_store_access_token(
@@ -165,10 +211,10 @@ def run_etl_for_store(
         "read_orders" in set(scopes),
     )
 
-    # Extract
+    # Extract (customers are derived from order payloads — no standalone Customers API)
     raw_products = fetch_products(shop_domain=shop_domain, access_token=access_token)
-    raw_customers = fetch_customers(shop_domain=shop_domain, access_token=access_token)
     raw_orders = fetch_orders(shop_domain=shop_domain, access_token=access_token)
+    raw_customers = deduplicate_customers_from_orders(raw_orders)
 
     # Transform
     products, variants = transform_products(raw_products)
@@ -204,6 +250,34 @@ def _assert_store_report_delivery_scope(*, store_id: int, report_path: str, reci
         raise RuntimeError(f"Report path is not store-scoped: {report_path}")
 
 
+def _problem_for_routing(summary: dict, routing_slug: str) -> str:
+    slug = routing_slug.strip().lower()
+    for ins in summary.get("insights") or []:
+        if str(ins.get("routing_type") or "").strip().lower() == slug:
+            return str(ins.get("problem") or ins.get("impact") or "")
+    return ""
+
+
+def _dead_inventory_target_rows_from_summary(summary: dict, *, limit: int = 8) -> list[dict]:
+    rows: list[dict] = []
+    products = sorted(
+        list((summary.get("anomalies") or {}).get("no_sales_products") or []),
+        key=lambda p: float(p.get("est_on_hand_value") or 0),
+        reverse=True,
+    )[:limit]
+    for p in products:
+        sku = str(p.get("primary_sku") or "").strip() or "N/A"
+        rows.append(
+            {
+                "name": str(p.get("product_title") or "Unknown product"),
+                "sku": sku,
+                "inventory": int(p.get("total_available") or 0),
+                "sales_last_90d": 0,
+            }
+        )
+    return rows
+
+
 def _build_email_report_data(*, store_id: int, report_payload: dict, summary: dict) -> dict:
     contract = report_payload.get("report_contract") or {}
     metadata = contract.get("metadata") or {}
@@ -213,48 +287,115 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
 
     enriched_actions = list(report_payload.get("actions") or [])
     enriched_by_id = {str(a.get("id") or ""): a for a in enriched_actions if str(a.get("id") or "").strip()}
-    fallback_actions = build_structured_actions(summary, max_actions=5)
-    fallback_by_rank = {idx + 1: row for idx, row in enumerate(fallback_actions)}
+    fallback_pool = build_structured_actions(
+        summary, max_actions=max(48, app_constants.REPORT_EMAIL_MAX_ACTIONS * 12)
+    )
+    fallback_by_route: dict[str, list[dict]] = defaultdict(list)
+    for row in fallback_pool:
+        rt = str(row.get("email_routing_type") or "").strip().lower()
+        if rt:
+            fallback_by_route[rt].append(row)
+    fallback_route_pos: defaultdict[str, int] = defaultdict(int)
     revenue_trend = (summary.get("revenue") or {}).get("trend") or {}
     orders_7d = float(revenue_trend.get("current_7d_orders") or 0.0)
     revenue_7d = float(revenue_trend.get("current_7d_net_revenue") or 0.0)
     store_aov = (revenue_7d / orders_7d) if orders_7d > 0 else 0.0
 
-    def _infer_action_type(*, diagnosis: str, intervention: str, enriched_type: str) -> str:
+    def _infer_action_type(*, diagnosis: str, intervention: str, enriched: dict) -> str:
+        route = str((enriched or {}).get("email_routing_type") or "").strip().lower()
+        if route and route in REGISTERED_INSIGHT_ACTION_TYPES:
+            return route
+
         text = f"{diagnosis} {intervention}".lower()
-        et = str(enriched_type or "").strip().lower()
-        if et in REGISTERED_INSIGHT_ACTIONS:
-            return et
-        if "dead inventory" in text or "zero sales in the last 90 days" in text or et == "inventory":
-            return "dead_inventory"
-        if "return rate" in text or "returned unit" in text or "refund" in text or et == "returns":
-            return "high_return_rate"
-        if "churn" in text or "inactive" in text or "win-back" in text:
-            return "churned_customers"
-        if "repeat" in text and "purchase" in text:
+
+        def _looks_like_duplicate(txt: str) -> bool:
+            if "duplicate" not in txt:
+                return False
+            if "order rate" in txt or "repeat rate" in txt:
+                return False
+            return "order" in txt or "orders" in txt or "charge" in txt
+
+        if _looks_like_duplicate(text):
+            return "duplicate_orders"
+        if ("one-time buyers" in text) or ("customers reorder" in text and "%" in diagnosis.lower()):
             return "low_repeat_purchase_rate"
-        if "vip" in text and "risk" in text:
+        if "return rate" in text or "returned unit" in text or "% return" in text:
+            return "high_return_rate"
+        if ("dead inventory" in text) or ("zero sales" in text and "inventory" in text):
+            return "dead_inventory"
+        if "vip" in text and ("risk" in text or "quiet" in text):
             return "high_value_customer_at_risk"
-        if "abandon" in text and "checkout" in text:
+        if "loyal revenue" in text and "top 2" in text:
+            return "revenue_concentration"
+        if ("abandon" in text and "checkout" in text) or ("abandoned" in text and "cart" in text):
             return "abandoned_checkout_spike"
+        if "discount" in text and "order" in text:
+            return "abnormal_discount"
+        if "churn" in text or "inactive for 90" in text or "win-back" in text:
+            return "churned_customers"
+        if ("repeat" in text and "purchase" in text) or "repeat rate" in text:
+            return "low_repeat_purchase_rate"
         if "margin" in text and ("profit" in text or "price increase" in text):
             return "low_margin_products"
-        return "dead_inventory"
+
+        coarse = str((enriched or {}).get("type") or "").strip().lower()
+        if coarse == "returns":
+            return "high_return_rate"
+        if coarse == "inventory":
+            return "dead_inventory"
+
+        return "low_margin_products"
 
     def _parse_target_row(raw_target: object) -> dict | None:
         if isinstance(raw_target, dict):
+            ds_raw = raw_target.get("days_since_order")
+            dsi = None
+            if ds_raw is not None:
+                try:
+                    dsi = int(round(float(ds_raw)))
+                except (TypeError, ValueError):
+                    dsi = None
+            inv_raw = raw_target.get("inventory")
+            inv_coerced = None
+            if inv_raw is not None:
+                try:
+                    inv_coerced = int(inv_raw)
+                except (TypeError, ValueError):
+                    inv_coerced = None
+
+            def _coerce_float(v: object) -> float | None:
+                if v is None:
+                    return None
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return None
+
+            def _coerce_int(v: object) -> int | None:
+                if v is None:
+                    return None
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    try:
+                        return int(round(float(v)))
+                    except (TypeError, ValueError):
+                        return None
+
             return {
                 "name": str(raw_target.get("name") or "").strip(),
                 "sku": str(raw_target.get("sku") or "N/A").strip() or "N/A",
-                "inventory": raw_target.get("inventory"),
+                "inventory": inv_coerced,
                 "sales_last_90d": raw_target.get("sales_last_90d") or raw_target.get("units_sold"),
                 "return_rate": raw_target.get("return_rate"),
                 "returned_units": raw_target.get("returned_units"),
                 "email": raw_target.get("email"),
-                "ltv": raw_target.get("ltv"),
-                "days_since_order": raw_target.get("days_since_order"),
-                "price": raw_target.get("price"),
-                "units_sold": raw_target.get("units_sold"),
+                "ltv": _coerce_float(raw_target.get("ltv")),
+                "total_spent": _coerce_float(raw_target.get("total_spent")),
+                "orders_count": _coerce_int(raw_target.get("orders_count")),
+                "days_since_order": dsi,
+                "price": _coerce_float(raw_target.get("price")),
+                "units_sold": _coerce_int(raw_target.get("units_sold")),
             }
         text = str(raw_target or "").strip()
         if not text:
@@ -274,13 +415,23 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
             # Some return-rate alerts include product identifier only (no explicit SKU token).
             sku = name
 
-        inv_match = re.search(r"inventory\s*[:=]?\s*(\d+)", text, flags=re.IGNORECASE)
+        inv_match = re.search(
+            r"(?:inventory|on\s*hand)\s*[:=]?\s*(\d+)", text, flags=re.IGNORECASE
+        )
         if inv_match:
             inventory = int(inv_match.group(1))
 
-        sales_match = re.search(r"sales\s*[:=]?\s*(\d+)\s*(?:in\s*last\s*90d|90d)?", text, flags=re.IGNORECASE)
+        sales_match = re.search(
+            r"90d\s*sales\s*[:=]?\s*(\d+)|sales\s*[:=]?\s*(\d+)\s*(?:in\s*last\s*90d|90d)?",
+            text,
+            flags=re.IGNORECASE,
+        )
         if sales_match:
-            sales_last_90d = int(sales_match.group(1))
+            g1, g2 = sales_match.group(1), sales_match.group(2)
+            g_raw = g1 if g1 is not None else g2
+            if g_raw:
+                sales_last_90d = int(g_raw)
+
 
         return_match = re.search(r"(\d+(?:\.\d+)?)\s*%\s*return", text, flags=re.IGNORECASE)
         if return_match:
@@ -288,11 +439,39 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
         returned_match = re.search(r"(\d+)\s+returned\s+unit", text, flags=re.IGNORECASE)
         if returned_match:
             returned_units = int(returned_match.group(1))
-        ltv_match = re.search(r"ltv\s*[:=]?\s*\$?(\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
-        days_since_match = re.search(r"(\d+)\s*d(?:ays?)?\s+since", text, flags=re.IGNORECASE)
+        ltv_match = re.search(r"ltv\s*[:=]?\s*\$?\s*([\d,]+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+        days_since_match = re.search(
+            r"(?:(\d+)\s*d(?:ays?)?\s+since|(\d+)\s+days\s+since\s+last\s+order)",
+            text,
+            flags=re.IGNORECASE,
+        )
         email_match = re.search(r"([a-zA-Z0-9][^@\s]{0,10}\*{0,3}@[^\s]+)", text)
-        price_match = re.search(r"price\s*[:=]?\s*\$?(\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+        price_match = re.search(
+            r"price\s*[:=]?\s*\$?\s*([\d,]+(?:\.\d+)?)", text, flags=re.IGNORECASE
+        )
         units_sold_match = re.search(r"units?\s*sold\s*[:=]?\s*(\d+)", text, flags=re.IGNORECASE)
+        units_90d_match = re.search(r"units sold 90d\s*(\d+)", text, flags=re.IGNORECASE)
+        spend_conc_match = re.search(r"SPEND:\s*\$?\s*([\d,]+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+        if not spend_conc_match:
+            spend_conc_match = re.search(
+                r"\bspend\s+\$?\s*([\d,]+(?:\.\d+)?)", text, flags=re.IGNORECASE
+            )
+        orders_conc_match = re.search(r"ORDERS:\s*(\d+)", text, flags=re.IGNORECASE)
+        if not orders_conc_match:
+            orders_conc_match = re.search(r"\b(\d+)\s+orders\b", text, flags=re.IGNORECASE)
+
+        def _strip_money(m: re.Match[str] | None) -> float | None:
+            if not m:
+                return None
+            return float(m.group(1).replace(",", ""))
+
+        us_raw = units_sold_match.group(1) if units_sold_match else None
+        if us_raw is None and units_90d_match:
+            us_raw = units_90d_match.group(1)
+        ltv_val = _strip_money(ltv_match)
+        price_val = _strip_money(price_match)
+        spend_val = _strip_money(spend_conc_match)
+        orders_conc = int(orders_conc_match.group(1)) if orders_conc_match else None
 
         return {
             "name": name,
@@ -302,34 +481,81 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
             "return_rate": return_rate,
             "returned_units": returned_units,
             "email": email_match.group(1).strip() if email_match else None,
-            "ltv": float(ltv_match.group(1)) if ltv_match else None,
-            "days_since_order": int(days_since_match.group(1)) if days_since_match else None,
-            "price": float(price_match.group(1)) if price_match else None,
-            "units_sold": int(units_sold_match.group(1)) if units_sold_match else None,
+            "ltv": ltv_val,
+            "total_spent": spend_val,
+            "orders_count": orders_conc,
+            "days_since_order": (
+                int(next(g for g in days_since_match.groups() if g is not None))
+                if days_since_match
+                else None
+            ),
+            "price": price_val,
+            "units_sold": int(us_raw) if us_raw is not None else None,
         }
+
+    def _target_rows_from_insight_routing(route_key: str) -> list[dict]:
+        rows: list[dict] = []
+        rk = str(route_key or "").strip().lower()
+        for ins in summary.get("insights") or []:
+            if str(ins.get("routing_type") or "").strip().lower() != rk:
+                continue
+            for line in ins.get("exact_items") or []:
+                parsed = _parse_target_row(line)
+                if parsed:
+                    rows.append(parsed)
+            break
+        return rows
 
     actions: list[dict] = []
     for idx, action in enumerate(contract_actions, start=1):
         action_id = str(action.get("id") or "")
         enriched = enriched_by_id.get(action_id, {})
-        fallback = fallback_by_rank.get(idx, {})
-        expected = action.get("expected_outcome") or {}
-        diagnosis = str(action.get("diagnosis") or fallback.get("context") or "Issue is reducing profitability.")
-        intervention = str(action.get("intervention") or fallback.get("execute_command") or "Execute highest-priority action now.")
+        slug = str(enriched.get("email_routing_type") or "").strip().lower()
+        flist = fallback_by_route.get(slug, []) if slug else []
+        fp = fallback_route_pos[slug]
+        fallback_row: dict = flist[fp] if slug and fp < len(flist) else {}
+        if slug and fp < len(flist):
+            fallback_route_pos[slug] = fp + 1
 
-        raw_targets = list(action.get("targets") or enriched.get("targets") or fallback.get("targets") or [])
-        target_rows = []
-        for target in raw_targets:
-            parsed = _parse_target_row(target)
-            if parsed:
-                target_rows.append(parsed)
-        risk_amount = float(expected.get("risk_if_ignored") or 0.0)
-        weekly_value = float(expected.get("weekly_value") or fallback.get("value") or 0.0)
-        action_type = _infer_action_type(
-            diagnosis=diagnosis,
-            intervention=intervention,
-            enriched_type=str(enriched.get("type") or ""),
+        expected = action.get("expected_outcome") or {}
+        diagnosis = str(
+            action.get("diagnosis") or fallback_row.get("context") or "Issue is reducing profitability."
         )
+        intervention = str(
+            action.get("intervention")
+            or fallback_row.get("execute_command")
+            or "Execute highest-priority action now."
+        )
+
+        action_type = _infer_action_type(diagnosis=diagnosis, intervention=intervention, enriched=enriched)
+
+        raw_targets = list(
+            action.get("targets") or enriched.get("targets") or fallback_row.get("targets") or []
+        )
+        if action_type == "dead_inventory":
+            target_rows = _dead_inventory_target_rows_from_summary(summary)
+        elif action_type == "low_margin_products":
+            target_rows = _target_rows_from_insight_routing("low_margin_products")
+            if not target_rows:
+                for target in raw_targets:
+                    parsed = _parse_target_row(target)
+                    if parsed:
+                        target_rows.append(parsed)
+        elif action_type == "revenue_concentration":
+            target_rows = _target_rows_from_insight_routing("revenue_concentration")
+            if not target_rows:
+                for target in raw_targets:
+                    parsed = _parse_target_row(target)
+                    if parsed:
+                        target_rows.append(parsed)
+        else:
+            target_rows = []
+            for target in raw_targets:
+                parsed = _parse_target_row(target)
+                if parsed:
+                    target_rows.append(parsed)
+        risk_amount = float(expected.get("risk_if_ignored") or 0.0)
+        weekly_value = float(expected.get("weekly_value") or fallback_row.get("value") or 0.0)
 
         metrics: dict = {"store_aov": store_aov}
         if action_type == "dead_inventory":
@@ -348,9 +574,19 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
             first = target_rows[0] if target_rows else {}
             rr_pct = float(first.get("return_rate") or 0.0)
             returned_units = int(first.get("returned_units") or 0)
+            pname = str(first.get("name") or "").strip()
+            if not pname or pname == "N/A":
+                prob_hr = diagnosis or _problem_for_routing(summary, "high_return_rate")
+                qm = re.search(r'"([^"]+)"\s+has\s+a\s+([\d.]+)%', prob_hr)
+                if qm:
+                    pname = qm.group(1).strip()
+                    if rr_pct <= 0:
+                        rr_pct = float(qm.group(2))
+            if not pname:
+                pname = "This product"
             metrics.update(
                 {
-                    "product_name": str(first.get("name") or "This product"),
+                    "product_name": pname,
                     "return_rate": rr_pct / 100.0 if rr_pct > 1 else rr_pct,
                     "returned_units": returned_units,
                     "revenue_lost": weekly_value,
@@ -358,21 +594,103 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
                 }
             )
         elif action_type == "low_repeat_purchase_rate":
-            one_time_buyers = max(len(target_rows), 1)
-            revenue_if_10pct = weekly_value if weekly_value > 0 else (one_time_buyers * store_aov * 0.10)
-            total_customers_est = max(one_time_buyers, int(round(one_time_buyers / 0.8)) if one_time_buyers > 0 else 0)
-            repeat_rate = 1.0 - (one_time_buyers / total_customers_est) if total_customers_est > 0 else 0.0
+            prob_text = diagnosis or _problem_for_routing(summary, "low_repeat_purchase_rate")
+            one_time_buyers = 0
+            m_ot = re.search(r"(\d+)\s+one-time buyers", prob_text, re.I)
+            if m_ot:
+                one_time_buyers = max(int(m_ot.group(1)), 0)
+            elif target_rows:
+                one_time_buyers = len(target_rows)
+            pct_m = re.search(r"(?:only\s+)?([\d.]+)\s*%\s+of\s+customers\s+reorder", prob_text, re.I)
+            repeat_rate = float(pct_m.group(1)) / 100.0 if pct_m else 0.0
+            revenue_if_10pct = weekly_value if weekly_value > 0 else (max(one_time_buyers, 1) * store_aov * 0.10)
+            denom = max(1.0 - repeat_rate, 0.05) if repeat_rate > 0 else 1.0
+            total_customers_est = (
+                max(int(round(one_time_buyers / denom)), one_time_buyers) if one_time_buyers > 0 else max(one_time_buyers, 1)
+            )
+            if repeat_rate <= 0.0 and one_time_buyers > 0 and total_customers_est > 0:
+                repeat_rate = max(min(1.0 - (one_time_buyers / total_customers_est), 1.0), 0.0)
+            if total_customers_est <= 0:
+                total_customers_est = max(one_time_buyers, 1)
             metrics.update(
                 {
                     "repeat_rate": max(min(repeat_rate, 1.0), 0.0),
                     "total_customers": int(total_customers_est),
-                    "one_time_buyers": int(one_time_buyers),
+                    "one_time_buyers": max(int(one_time_buyers), 0),
                     "store_aov": store_aov,
                     "revenue_if_10pct_improvement": float(revenue_if_10pct),
                 }
             )
+        elif action_type == "duplicate_orders":
+            m_cust = re.search(r"customer\s+(\d+)", diagnosis, re.I)
+            m_ord = re.search(r"(\d+)\s+duplicate\s+orders", diagnosis, re.I)
+            dup_n = int(m_ord.group(1)) if m_ord else 2
+            customer_id_disp = str(m_cust.group(1)).strip() if m_cust else ""
+            exposure = weekly_value if weekly_value > 0 else 0.0
+            metrics.update(
+                {
+                    "customer_id_display": customer_id_disp,
+                    "duplicate_order_entries": dup_n,
+                    "duplicate_charge_exposure": float(exposure),
+                    "store_aov": store_aov,
+                }
+            )
+        elif action_type == "revenue_concentration":
+            loyal = list((summary.get("customers") or {}).get("loyal") or [])
+            total_loyal = sum(float(c.get("total_spent") or 0) for c in loyal)
+            top2 = loyal[:2]
+            top2_rev = sum(float(c.get("total_spent") or 0) for c in top2)
+            pct = (top2_rev / total_loyal * 100.0) if total_loyal > 0 else 0.0
+            metrics.update(
+                {
+                    "concentration_pct": round(pct, 1),
+                    "top_two_revenue_share": round(top2_rev, 2),
+                    "loyal_revenue_pool": round(total_loyal, 2),
+                    "store_aov": store_aov,
+                }
+            )
+        elif action_type == "abnormal_discount":
+            m_oid = re.search(r"order\s+(\d+)", diagnosis, re.I)
+            m_pct = re.search(r"([\d.]+)%\s*discount", diagnosis, re.I)
+            metrics.update(
+                {
+                    "order_id_hint": str(m_oid.group(1)) if m_oid else "",
+                    "discount_pct_hint": float(m_pct.group(1)) if m_pct else 0.0,
+                    "estimated_leak_usd": float(weekly_value),
+                    "store_aov": store_aov,
+                }
+            )
+        elif action_type == "churned_customers":
+            churned = list((summary.get("customers") or {}).get("churned") or [])
+            churned_count = len(churned)
+            potential_recovery = sum(
+                float(c.get("total_spent") or 0) / max(int(c.get("orders_count") or 1), 1) for c in churned
+            )
+            ds_vals: list[float] = []
+            for c in churned:
+                d = c.get("days_since_last_order")
+                if d is not None:
+                    try:
+                        ds_vals.append(float(d))
+                    except (TypeError, ValueError):
+                        continue
+            avg_days_since = round(sum(ds_vals) / len(ds_vals), 1) if ds_vals else 0.0
+            metrics.update(
+                {
+                    "churned_count": int(churned_count),
+                    "potential_recovery": float(potential_recovery),
+                    "avg_days_since_order": float(avg_days_since),
+                    "top_churned_product": "your top categories",
+                    "store_aov": store_aov,
+                }
+            )
         elif action_type == "high_value_customer_at_risk":
             customer_count = len(target_rows)
+            if customer_count <= 0:
+                prob_v = diagnosis or _problem_for_routing(summary, "high_value_customer_at_risk")
+                mh = re.search(r"(\d+)\s+high-value customers", prob_v, re.I)
+                if mh:
+                    customer_count = max(int(mh.group(1)), 0)
             avg_ltv = (
                 sum(float(row.get("ltv") or 0.0) for row in target_rows) / customer_count
                 if customer_count > 0
@@ -394,7 +712,15 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
                 }
             )
         elif action_type == "abandoned_checkout_spike":
-            abandoned_count = max(len(target_rows), 1)
+            abandoned_count = len(target_rows)
+            if abandoned_count <= 0:
+                prob_a = diagnosis or _problem_for_routing(summary, "abandoned_checkout_spike")
+                ma = re.search(r"(\d+)\s+checkouts\s+abandoned", prob_a, re.I)
+                if ma:
+                    abandoned_count = max(int(ma.group(1)), 1)
+                else:
+                    abandoned_count = max(abandoned_count, 1)
+            abandoned_count = max(abandoned_count, 1)
             potential_revenue = float(weekly_value if weekly_value > 0 else (abandoned_count * store_aov))
             abandonment_rate = 0.75 if abandoned_count > 0 else 0.0
             prev_rate = max(abandonment_rate - 0.08, 0.0)
@@ -410,9 +736,12 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
         elif action_type == "low_margin_products":
             first = target_rows[0] if target_rows else {}
             units_sold = int(first.get("units_sold") or first.get("sales_last_90d") or 0)
-            revenue_generated = float(
-                weekly_value if weekly_value > 0 else (units_sold * float(first.get("price") or store_aov))
-            )
+            price_f = float(first.get("price") or 0.0)
+            revenue_generated = price_f * float(units_sold) if units_sold and price_f else 0.0
+            if revenue_generated <= 0.0:
+                revenue_generated = float(
+                    weekly_value if weekly_value > 0 else (max(units_sold, 1) * (price_f or store_aov))
+                )
             estimated_margin = 0.60
             metrics.update(
                 {
@@ -428,7 +757,7 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
             {
                 "number": int(action.get("priority") or idx),
                 "type": "PRIMARY REVENUE LEAK" if idx == 1 else "SECONDARY OPTIMIZATION LEAK",
-                "daily_impact": float(expected.get("daily_impact") or fallback.get("daily_loss") or 0.0),
+                "daily_impact": float(expected.get("daily_impact") or fallback_row.get("daily_loss") or 0.0),
                 "problem": diagnosis,
                 "fix": intervention,
                 "impact_bullets": [
@@ -469,6 +798,7 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
 def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
     logger.info("Starting reporting pipeline...", extra={"store_id": store_id})
 
+    _log_all_registered_insight_signals(store_id)
     summary = build_summary(store_id)
     sync_tasks_from_summary(store_id, summary)
     auto_verify_tasks_from_summary(store_id, summary)

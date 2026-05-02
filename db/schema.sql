@@ -346,6 +346,15 @@ CREATE INDEX IF NOT EXISTS idx_referral_codes_partner ON referral_codes(partner_
 CREATE INDEX IF NOT EXISTS idx_store_referrals_referral_code_id ON store_referrals(referral_code_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states(expires_at);
 
+-- Abandoned carts (optional; used by abandoned_checkout_spike insight)
+CREATE TABLE IF NOT EXISTS abandoned_checkouts (
+    id BIGSERIAL PRIMARY KEY,
+    store_id BIGINT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_abandoned_checkouts_store_created
+    ON abandoned_checkouts (store_id, created_at DESC);
+
 -- Job monitoring table (basic operational visibility)
 CREATE TABLE IF NOT EXISTS job_runs (
     id BIGSERIAL PRIMARY KEY,

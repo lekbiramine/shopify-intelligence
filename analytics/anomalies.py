@@ -97,6 +97,7 @@ def get_products_with_no_sales(store_id: int) -> list[dict]:
             p.product_type,
             p.created_at,
             COALESCE(SUM(i.available), 0) AS total_available,
+            COALESCE(MAX(NULLIF(TRIM(BOTH FROM v.sku), '')), '') AS primary_sku,
             COALESCE(AVG(NULLIF(v.price, 0)), 0) AS avg_variant_price,
             COALESCE(SUM(i.available) * AVG(NULLIF(v.price, 0)), 0) AS est_on_hand_value
         FROM products p

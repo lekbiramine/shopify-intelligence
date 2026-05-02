@@ -12,6 +12,7 @@ from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Space
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.units import inch
 
+from config import constants as report_constants
 from config.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -156,7 +157,9 @@ def _has_broken_placeholder(text: str) -> bool:
     if not t:
         return True
     patterns = [
-        r"\b[-+]\s*(day|days|week|weeks|order|orders)\b",
+        # Avoid false positives from "90+ days" (?<!\d) and compound words like "repeat-order" (require delim before '-').
+        r"(?<!\d)\+\s*(day|days|week|weeks|order|orders)\b",
+        r"(?:^|[\s,;(])-\s+(day|days|week|weeks|order|orders)\b",
         r"\b(within|for)\s*[-+]\s*(day|days|week|weeks)\b",
         r"\brecover\s*[-+]\s*orders\b",
         r"\breturn rate\b$",
@@ -218,6 +221,20 @@ def _safe_render_text(value: object, *, max_len: int = 180) -> str:
     if len(text) > max_len:
         text = text[: max_len - 3].rstrip() + "..."
     return text
+
+
+def _plain_clip(value: object, *, max_len: int = 200) -> str:
+    """Truncate without rejecting strings that mention '+ days', 'repeat-order', etc."""
+    text = _safe(value)
+    if not text:
+        return ""
+    if len(text) > max_len:
+        text = text[: max_len - 3].rstrip() + "..."
+    return text
+
+
+def _finalize_field(value: object, *, max_len: int) -> str:
+    return _safe_render_text(value, max_len=max_len) or _plain_clip(value, max_len=max_len)
 
 
 def _strip_weak_language(value: object) -> str:
@@ -462,10 +479,15 @@ def _action_uniqueness_key(item: dict) -> str:
     kind = _action_kind(item)
     if kind in {"inventory", "out_of_stock"}:
         return "out_of_stock"
-    return kind
+    title_key = _safe(item.get("title")).strip().lower()
+    # One row per distinct insight title so multiple concentration/signal insights do not collapse to one slot.
+    return f"{kind}|{title_key}" if title_key else kind
 
 
-def _rank_priority_actions(insights: list[dict], max_actions: int = 5) -> list[dict]:
+def _rank_priority_actions(
+    insights: list[dict], max_actions: int | None = None
+) -> list[dict]:
+    cap = report_constants.REPORT_EMAIL_MAX_ACTIONS if max_actions is None else max_actions
     ranked = [i for i in _prioritize_insights(insights) if _to_float(i.get("potential_value")) > 0]
     ranked.sort(
         key=lambda i: (
@@ -482,7 +504,7 @@ def _rank_priority_actions(insights: list[dict], max_actions: int = 5) -> list[d
             continue
         seen.add(key)
         unique.append(item)
-        if len(unique) >= max_actions:
+        if len(unique) >= cap:
             break
     return unique
 
@@ -626,21 +648,45 @@ def _build_action_payload(item: dict, summary: dict) -> dict[str, object]:
         )
         profile = _action_class(kind)
     elif kind == "concentration":
-        items = _concentration_items(summary)
+        insight_title_lc = _safe(item.get("title")).lower()
+        items = list(_concentration_items(summary))
         pct = _to_float_optional(_business_snapshot(summary).get("concentration_risk_pct"))
         listed = len(items)
-        title = "Reduce revenue concentration risk from top customers"
-        context = f"Top 2 customers represent {pct:.1f}% of loyal revenue." if pct is not None else ""
-        target_customers = max(1, min(3, listed))
-        execution = "Send a repeat-order offer to loyal customers outside your current top 2 buyers."
-        target_pct = max((pct or 0.0) - 10.0, 0.0) if pct is not None else None
-        outcome = (
-            f"+{target_customers} repeat orders (baseline 0 -> target {target_customers})"
-            if listed > 0
-            else ""
-        )
-        if pct is not None and target_pct is not None:
-            outcome = f"Reduce top-2 customer concentration by 10 percentage points (baseline {pct:.1f}% -> target {target_pct:.1f}%)"
+        if "at risk" in insight_title_lc:
+            exact = [_plain_clip(x, max_len=220) for x in (item.get("exact_items") or [])]
+            exact = [x for x in exact if x]
+            if exact:
+                items = exact
+            listed = len(items)
+            title = _plain_clip(item.get("title"), max_len=100) or "Re-engage at-risk VIP customers before revenue slips"
+            context = _plain_clip(item.get("problem") or item.get("impact"), max_len=170)
+            execution = _plain_clip(item.get("action_cta") or item.get("action"), max_len=170)
+            outcome = _plain_clip(item.get("expected_outcome"), max_len=170)
+            if not outcome and pct is not None:
+                outcome = (
+                    f"Secure repeat revenue from flagged VIPs; top-two buyer concentration is {pct:.1f}% "
+                    "of loyal revenue."
+                )
+            if not context:
+                context = "High-LTV purchasers have stalled versus their historic purchase cadence."
+            if not execution:
+                execution = "Launch the VIP win-back playbook from your insight summary within the next 48 hours."
+        else:
+            title = "Reduce revenue concentration risk from top customers"
+            context = f"Top 2 customers represent {pct:.1f}% of loyal revenue." if pct is not None else ""
+            execution = "Send a repeat-order offer to loyal customers outside your current top 2 buyers."
+            target_pct = max((pct or 0.0) - 10.0, 0.0) if pct is not None else None
+            target_customers = max(1, min(3, listed))
+            outcome = (
+                f"+{target_customers} repeat orders (baseline 0 -> target {target_customers})"
+                if listed > 0
+                else ""
+            )
+            if pct is not None and target_pct is not None:
+                outcome = (
+                    f"Reduce top-2 customer concentration by 10 percentage points (baseline {pct:.1f}% -> "
+                    f"target {target_pct:.1f}%)"
+                )
         profile = _action_class(kind)
     elif kind == "out_of_stock":
         items = _inventory_items(summary)
@@ -670,12 +716,32 @@ def _build_action_payload(item: dict, summary: dict) -> dict[str, object]:
         outcome = f"-{listed} out-of-stock variants (baseline {listed} -> target 0)" if listed > 0 else ""
         profile = _action_class(kind)
     else:
-        return {}
+        profile = _action_class("general")
+        title = _plain_clip(item.get("title"), max_len=100) or "Operational revenue friction detected"
+        context = _plain_clip(item.get("problem") or item.get("impact"), max_len=170)
+        execution = _plain_clip(item.get("action_cta") or item.get("action"), max_len=170)
+        outcome = _plain_clip(item.get("expected_outcome"), max_len=170)
+        raw_items = [_plain_clip(x, max_len=220) for x in (item.get("exact_items") or [])]
+        items = [x for x in raw_items if x]
+        if not items:
+            cue = context or outcome or execution
+            if cue:
+                items = [_plain_clip(cue, max_len=120)]
+            else:
+                items = [_plain_clip(title, max_len=120)]
+        if not execution:
+            execution = (
+                _plain_clip(item.get("execution_note"), max_len=170)
+                or "Execute the intervention from your prioritized insight checklist this week."
+            )
+        if not context:
+            context = execution
 
-    context = _safe_render_text(context, max_len=170)
-    outcome = _safe_render_text(outcome, max_len=170)
-    execution = _safe_render_text(execution, max_len=170)
-    items = [x for x in items if _safe_render_text(x)]
+    context = _finalize_field(context, max_len=170)
+    outcome = _finalize_field(outcome, max_len=170)
+    execution = _finalize_field(execution, max_len=170)
+    items = [_finalize_field(x, max_len=220) for x in items]
+    items = [x for x in items if x]
     return {
         "title": title,
         "recoverable_value": value,
@@ -732,9 +798,10 @@ def _action_id(kind: str, rank: int) -> str:
     return f"{kind}-{rank}"
 
 
-def build_structured_actions(summary: dict, *, max_actions: int = 5) -> list[dict[str, object]]:
+def build_structured_actions(summary: dict, *, max_actions: int | None = None) -> list[dict[str, object]]:
+    cap = report_constants.REPORT_EMAIL_MAX_ACTIONS if max_actions is None else max_actions
     insights = list(summary.get("insights", []) or [])
-    ranked_actions = _rank_priority_actions(insights, max_actions=max_actions)
+    ranked_actions = _rank_priority_actions(insights, max_actions=cap)
     structured: list[dict[str, object]] = []
     for idx, item in enumerate(ranked_actions, start=1):
         kind = _action_kind(item)
@@ -753,6 +820,7 @@ def build_structured_actions(summary: dict, *, max_actions: int = 5) -> list[dic
             f"Target: {expected_result.get('target_min')}-{expected_result.get('target_max')} "
             f"{_safe(expected_result.get('metric')).replace('_', ' ')} in 7 days"
         )
+        route = str(item.get("routing_type") or "").strip().lower()
         structured.append(
             {
                 "id": _action_id(kind, idx),
@@ -761,6 +829,7 @@ def build_structured_actions(summary: dict, *, max_actions: int = 5) -> list[dic
                 "daily_loss": round(daily_loss, 2),
                 "priority_score": priority_score,
                 "rank": idx,
+                "email_routing_type": route,
                 "context": _strip_weak_language(context),
                 "targets": targets,
                 "execute_command": _strip_weak_language(execution),

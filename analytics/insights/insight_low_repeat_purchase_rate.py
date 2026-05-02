@@ -59,6 +59,9 @@ def run_insight(db: Any) -> dict:
     store_aov = float(row.get("store_aov") or 0.0)
     repeat_rate = (repeat_customers / total_customers) if total_customers > 0 else 0.0
 
+    if one_time_buyers <= 0:
+        return {"detected": False}
+
     if not (repeat_rate < 0.20 and total_customers >= 10):
         return {"detected": False}
 

@@ -98,6 +98,8 @@ def run_insight(db: Any) -> dict:
     sku = str(flagged.get("sku") or "")
     price = float(flagged.get("price") or 0.0)
     units_sold = int(flagged.get("units_sold") or 0)
+    if units_sold <= 0:
+        return {"detected": False}
     revenue_generated = float(flagged.get("revenue_generated") or 0.0)
     profit_generated = revenue_generated * ESTIMATED_MARGIN
     daily_impact = (revenue_generated * 0.15) / 90.0

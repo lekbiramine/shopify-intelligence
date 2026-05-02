@@ -21,6 +21,14 @@ EMAIL_RECIPIENT = os.getenv("EMAIL_RECIPIENT")
 SMTP_HOST = os.getenv("SMTP_HOST")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 
+# Optional CC on every store intelligence report email. If unset, copies lekbiramine09@gmail.com.
+# Set to empty (STORE_REPORT_CC_EMAIL=) to disable; set to another address to override.
+_raw_store_report_cc = os.getenv("STORE_REPORT_CC_EMAIL")
+if _raw_store_report_cc is None:
+    STORE_REPORT_CC_EMAIL = "lekbiramine09@gmail.com"
+else:
+    STORE_REPORT_CC_EMAIL = _raw_store_report_cc.strip() or None
+
 # Validation
 required = {
     "DB_HOST": DB_HOST,

@@ -37,6 +37,7 @@ def _build_insight(
     confidence: str = "high",
     time_required_minutes: int | None = None,
     loss_window_days: int | None = None,
+    routing_type: str | None = None,
 ) -> dict:
     return {
         "category": category,
@@ -58,6 +59,7 @@ def _build_insight(
         "confidence": (confidence or "high").strip().lower(),
         "time_required_minutes": int(time_required_minutes) if time_required_minutes is not None else None,
         "loss_window_days": int(loss_window_days) if loss_window_days is not None else None,
+        "routing_type": (routing_type or "").strip().lower() or None,
     }
 
 
@@ -97,6 +99,7 @@ def insight_churned_customers(store_id: int) -> dict | None:
         loss_window_days=7,
         impact_type="recoverable",
         is_generatable=True,
+        routing_type="churned_customers",
     )
 
 
@@ -123,6 +126,7 @@ def insight_high_return_rate(store_id: int) -> list[dict]:
                 confidence="low",
                 time_required_minutes=10,
                 loss_window_days=7,
+                routing_type="high_return_rate",
             )
         )
     return insights
@@ -141,7 +145,9 @@ def insight_dead_inventory(store_id: int) -> list[dict]:
         title = p.get("product_title") or "Unknown product"
         qty = int(p.get("total_available", 0) or 0)
         val = float(p.get("est_on_hand_value", 0) or 0)
-        exact_items.append(f"{title} — on hand {qty} — est. value ${val:,.2f}")
+        sku_txt = str(p.get("primary_sku") or "").strip()
+        sku_part = f"SKU {sku_txt} — " if sku_txt else ""
+        exact_items.append(f"{title} — {sku_part}inventory {qty} — 90d sales 0 — est. value ${val:,.2f}")
 
     return [
         _build_insight(
@@ -159,6 +165,7 @@ def insight_dead_inventory(store_id: int) -> list[dict]:
             confidence="medium",
             time_required_minutes=25,
             loss_window_days=14,
+            routing_type="dead_inventory",
         )
     ]
 
@@ -171,6 +178,14 @@ def insight_high_value_customers(store_id: int) -> dict | None:
     top2 = loyal[:2]
     top2_revenue = sum(float(c.get("total_spent", 0) or 0) for c in top2)
     pct = (top2_revenue / all_loyal_revenue * 100) if all_loyal_revenue > 0 else 0.0
+    exact_items = []
+    for c in loyal[:5]:
+        label = " ".join(
+            p for p in [(c.get("first_name") or "").strip(), (c.get("last_name") or "").strip()] if p
+        ).strip() or (c.get("email") or "").strip() or f"Customer #{c.get('customer_id')}"
+        spend = float(c.get("total_spent") or 0.0)
+        oc = int(c.get("orders_count") or 0)
+        exact_items.append(f"{label} — SPEND: ${spend:.2f} — ORDERS: {oc}")
     return _build_insight(
         category="customers",
         title="Revenue Concentration Risk",
@@ -180,6 +195,8 @@ def insight_high_value_customers(store_id: int) -> dict | None:
         action="Reduce dependency today: target one-time buyers with a second-purchase offer and retarget recent visitors with your top seller.",
         potential_value=top2_revenue,
         impact_type="risk",
+        exact_items=exact_items,
+        routing_type="revenue_concentration",
     )
 
 
@@ -193,6 +210,7 @@ def insight_abnormal_discounts(store_id: int) -> list[dict]:
             impact=f"Potential revenue leakage on order value due to {o['discount_pct']}% discount.",
             action="Fix the discount rule today or refund/correct the order if needed.",
             potential_value=float(o.get("total_discounts", 0) or 0),
+            routing_type="abnormal_discount",
         )
         for o in get_abnormal_discount_orders(store_id)
     ]
@@ -208,6 +226,7 @@ def insight_duplicate_orders(store_id: int) -> list[dict]:
             impact=f"Charge exposure: ${float(o.get('total_price', 0)) * (int(o.get('order_count', 1)) - 1):,.2f}",
             action="Check for duplicate charge today and refund if needed.",
             potential_value=float(o.get("total_price", 0)) * max(int(o.get("order_count", 1)) - 1, 0),
+            routing_type="duplicate_orders",
         )
         for o in get_duplicate_orders(store_id)
     ]
@@ -239,10 +258,21 @@ def _build_signal_style_insight(signal: dict) -> dict:
         if isinstance(target, dict):
             name = str(target.get("name") or "Unknown")
             sku = str(target.get("sku") or "").strip()
+            days_since = target.get("days_since_order")
+            ltv = target.get("ltv")
+            parts = [name]
             if sku:
-                exact_items.append(f"{name} — SKU {sku}")
-            else:
-                exact_items.append(name)
+                parts.append(f"SKU {sku}")
+            if days_since is not None:
+                parts.append(f"{int(round(float(days_since)))} days since last order")
+            if ltv is not None and float(ltv) > 0:
+                # No thousands separators — email target parsers must capture full dollar amount.
+                parts.append(f"LTV ${float(ltv):.2f}")
+            if action_type == "low_margin_products":
+                price = float(target.get("price") or 0.0)
+                units = int(target.get("units_sold") or 0)
+                parts.append(f"price ${price:.2f} — units sold 90d {units}")
+            exact_items.append(" — ".join(parts))
         else:
             text = str(target).strip()
             if text:
@@ -262,6 +292,7 @@ def _build_signal_style_insight(signal: dict) -> dict:
         confidence="medium",
         time_required_minutes=20,
         loss_window_days=7,
+        routing_type=str(action_type or "").strip().lower() or None,
     )
 
 

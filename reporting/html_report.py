@@ -111,6 +111,25 @@ def _render_targets(targets: list[dict], action_type: str) -> str:
                     ltv_text = "—"
             detail = f"<span style=\"color:#666666;\"> | LTV: {escape(ltv_text)} | SILENT: {escape(days_since_order)} days</span>"
             lead = name
+        elif normalized_type == "revenue_concentration":
+            spend_raw = t.get("total_spent")
+            if spend_raw is None:
+                spend_raw = ltv
+            spend_text = "—"
+            if spend_raw is not None:
+                try:
+                    spend_text = f"${float(spend_raw):,.2f}"
+                except (TypeError, ValueError):
+                    spend_text = "—"
+            oc = t.get("orders_count")
+            orders_text = "—"
+            if oc is not None:
+                try:
+                    orders_text = str(int(oc))
+                except (TypeError, ValueError):
+                    orders_text = "—"
+            detail = f"<span style=\"color:#666666;\"> | SPEND: {escape(spend_text)} | ORDERS: {escape(orders_text)}</span>"
+            lead = name
         elif normalized_type == "low_margin_products":
             price_text = "—"
             try:

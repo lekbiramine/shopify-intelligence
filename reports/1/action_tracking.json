@@ -42,9 +42,9 @@
       "executed_at": null,
       "snoozed_until": "2026-05-02T09:54:34.675345+00:00",
       "ignored_at": null,
-      "impact_realized_24h": 0.0,
+      "impact_realized_24h": 57.11,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-01T21:31:12.534530+00:00"
+      "last_verification_at": "2026-05-02T11:12:15.537290+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -54,9 +54,93 @@
       "executed_at": null,
       "snoozed_until": null,
       "ignored_at": null,
+      "impact_realized_24h": 57.11,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": "2026-05-02T11:12:14.971046+00:00"
+    },
+    "action_3": {
+      "action_id": "action_3",
+      "status": "not_executed",
+      "created_at": "2026-05-02T10:38:28.294371+00:00",
+      "updated_at": "2026-05-02T10:38:28.294371+00:00",
+      "executed_at": null,
+      "snoozed_until": null,
+      "ignored_at": null,
       "impact_realized_24h": 0.0,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-01T21:31:12.292034+00:00"
+      "last_verification_at": null
+    },
+    "action_4": {
+      "action_id": "action_4",
+      "status": "not_executed",
+      "created_at": "2026-05-02T10:38:28.294389+00:00",
+      "updated_at": "2026-05-02T10:38:28.294389+00:00",
+      "executed_at": null,
+      "snoozed_until": null,
+      "ignored_at": null,
+      "impact_realized_24h": 0.0,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": null
+    },
+    "action_5": {
+      "action_id": "action_5",
+      "status": "not_executed",
+      "created_at": "2026-05-02T10:38:28.294394+00:00",
+      "updated_at": "2026-05-02T10:38:28.294394+00:00",
+      "executed_at": null,
+      "snoozed_until": null,
+      "ignored_at": null,
+      "impact_realized_24h": 0.0,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": null
+    },
+    "action_6": {
+      "action_id": "action_6",
+      "status": "not_executed",
+      "created_at": "2026-05-02T10:38:28.294397+00:00",
+      "updated_at": "2026-05-02T10:38:28.294397+00:00",
+      "executed_at": null,
+      "snoozed_until": null,
+      "ignored_at": null,
+      "impact_realized_24h": 0.0,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": null
+    },
+    "action_7": {
+      "action_id": "action_7",
+      "status": "not_executed",
+      "created_at": "2026-05-02T10:38:28.294400+00:00",
+      "updated_at": "2026-05-02T10:38:28.294400+00:00",
+      "executed_at": null,
+      "snoozed_until": null,
+      "ignored_at": null,
+      "impact_realized_24h": 0.0,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": null
+    },
+    "action_8": {
+      "action_id": "action_8",
+      "status": "not_executed",
+      "created_at": "2026-05-02T10:38:28.294403+00:00",
+      "updated_at": "2026-05-02T10:38:28.294403+00:00",
+      "executed_at": null,
+      "snoozed_until": null,
+      "ignored_at": null,
+      "impact_realized_24h": 0.0,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": null
+    },
+    "action_9": {
+      "action_id": "action_9",
+      "status": "not_executed",
+      "created_at": "2026-05-02T10:38:28.294406+00:00",
+      "updated_at": "2026-05-02T10:38:28.294406+00:00",
+      "executed_at": null,
+      "snoozed_until": null,
+      "ignored_at": null,
+      "impact_realized_24h": 0.0,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": null
     }
   },
   "action_history": [
@@ -76,15 +160,15 @@
       "action_id": "action_2",
       "window": "24h",
       "predicted_recovered_7d": 20.0,
-      "actual_recovered_7d": 0.0,
-      "delta": -20.0
+      "actual_recovered_7d": 399.79,
+      "delta": 379.79
     },
     {
       "action_id": "action_1",
       "window": "24h",
       "predicted_recovered_7d": 159.92,
-      "actual_recovered_7d": 0.0,
-      "delta": -159.92
+      "actual_recovered_7d": 399.79,
+      "delta": 239.87
     }
   ],
   "score_feedback": {}

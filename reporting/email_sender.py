@@ -14,26 +14,38 @@ def build_email(
     body: str,
     html_body: str | None = None,
     recipient: str | None = None,
+    cc: str | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = settings.EMAIL_SENDER
     msg["To"] = recipient or settings.EMAIL_RECIPIENT
+    if cc:
+        msg["Cc"] = cc
     msg.set_content(body)
     if html_body:
         msg.add_alternative(html_body, subtype="html")
     return msg
 
 
-def send_email(subject: str, body: str, html_body: str | None = None, recipient: str | None = None) -> None:
+def send_email(
+    subject: str,
+    body: str,
+    html_body: str | None = None,
+    recipient: str | None = None,
+    cc: str | None = None,
+) -> None:
     """
     Sends a plain text email via SMTP SSL on port 465.
     """
     to_addr = recipient or settings.EMAIL_RECIPIENT
-    logger.info(f"Sending email to {to_addr}...")
+    if cc:
+        logger.info(f"Sending email to {to_addr} (Cc: {cc})...")
+    else:
+        logger.info(f"Sending email to {to_addr}...")
     settings.validate_email_env()
 
-    msg = build_email(subject, body, html_body=html_body, recipient=to_addr)
+    msg = build_email(subject, body, html_body=html_body, recipient=to_addr, cc=cc)
     context = ssl.create_default_context()
 
     try:
@@ -82,9 +94,12 @@ def send_store_report_email(*, store_id: int, report_data: dict) -> str:
         f"Actions: {len(actions)}\n"
         f"Total value: ${_format_subject_money(report_data.get('total_value'))}\n"
     )
-    send_email(subject, plain_body, html_body=html_content, recipient=recipient)
+    cc = settings.STORE_REPORT_CC_EMAIL
+    if cc and recipient and cc.strip().lower() == recipient.strip().lower():
+        cc = None
+    send_email(subject, plain_body, html_body=html_content, recipient=recipient, cc=cc)
     logger.info(
         "Store-scoped email sent",
-        extra={"store_id": store_id, "recipient": recipient},
+        extra={"store_id": store_id, "recipient": recipient, "cc": cc or ""},
     )
     return recipient

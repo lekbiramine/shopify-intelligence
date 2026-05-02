@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from analytics.summary import build_summary
+from config import constants as app_constants
 from reporting.pdf_report_v2 import build_structured_actions
 
 app = FastAPI(title="Store Intelligence API")
@@ -52,6 +53,7 @@ class ExpectedResult(BaseModel):
 class ActionResponse(BaseModel):
     id: str
     title: str
+    email_routing_type: str = ""
     value: float
     daily_loss: float
     priority_score: float
@@ -75,7 +77,7 @@ def _safe_float(value: object, default: float = 0.0) -> float:
         return float(default)
 
 
-def _normalize_targets(raw_targets: list[object], *, max_items: int = 3) -> list[str]:
+def _normalize_targets(raw_targets: list[object], *, max_items: int = 8) -> list[str]:
     cleaned: list[str] = []
     seen: set[str] = set()
     for raw in raw_targets or []:
@@ -497,6 +499,7 @@ def _operational_outcome(action_type: str) -> str:
 
 def _build_enriched_action(action: ActionResponse) -> dict:
     action_type = _infer_action_type(action)
+    canonical_route = str(getattr(action, "email_routing_type", "") or "").strip().lower()
     weekly_loss_projection = round(float(action.daily_loss) * 7.0, 2)
     hardened_title = _harden_action_title(action.title, float(action.daily_loss))
     execution = _action_execution(action_type, action.execute_command)
@@ -506,6 +509,7 @@ def _build_enriched_action(action: ActionResponse) -> dict:
         "id": str(action.id),
         "title": hardened_title,
         "type": action_type,
+        "email_routing_type": canonical_route,
         "value": round(float(action.value), 2),
         "daily_loss": round(float(action.daily_loss), 2),
         "weekly_loss_projection": weekly_loss_projection,
@@ -637,7 +641,7 @@ def _to_canonical_actions(store_id: int) -> list[ActionResponse]:
     summary = build_summary(store_id)
     state = _load_state(store_id)
     score_feedback = state.get("score_feedback", {}) if isinstance(state, dict) else {}
-    raw_actions = build_structured_actions(summary, max_actions=5)
+    raw_actions = build_structured_actions(summary, max_actions=app_constants.REPORT_EMAIL_MAX_ACTIONS)
     baseline = _store_snapshot_metrics(store_id)
     actions: list[ActionResponse] = []
     for idx, raw in enumerate(raw_actions, start=1):
@@ -663,6 +667,7 @@ def _to_canonical_actions(store_id: int) -> list[ActionResponse]:
             ActionResponse(
                 id=f"action_{idx}",
                 title=str(sanitized.get("title") or ""),
+                email_routing_type=str(sanitized.get("email_routing_type") or "").strip(),
                 value=float(sanitized.get("value") or 0.0),
                 daily_loss=float(sanitized.get("daily_loss") or 0.0),
                 priority_score=0.0,
@@ -702,6 +707,7 @@ def _to_canonical_actions(store_id: int) -> list[ActionResponse]:
             ActionResponse(
                 id=f"action_{idx}",
                 title=str(sanitized.get("title") or ""),
+                email_routing_type=str(sanitized.get("email_routing_type") or "").strip(),
                 value=float(sanitized.get("value") or 0.0),
                 daily_loss=float(sanitized.get("daily_loss") or 0.0),
                 priority_score=score,
@@ -975,6 +981,7 @@ def api_results(store_id: int = 1) -> dict:
         4,
     )
     enriched_actions = [_build_enriched_action(action) for action in actions]
+    enriched_actions.sort(key=lambda row: float(row.get("daily_loss") or 0.0), reverse=True)
     completed_ids = {str(x.get("action_id") or "") for x in completed if isinstance(x, dict)}
     total_daily_loss = round(sum(float(x["daily_loss"]) for x in enriched_actions), 2)
     weekly_recoverable = round(sum(float(x["value"]) for x in enriched_actions), 2)
@@ -1038,7 +1045,9 @@ def api_results(store_id: int = 1) -> dict:
         },
     }
     top_actions_contract: list[dict] = []
-    for idx, enriched_action in enumerate(report_payload["actions"][:2], start=1):
+    for idx, enriched_action in enumerate(
+        report_payload["actions"][: app_constants.REPORT_EMAIL_MAX_ACTIONS], start=1
+    ):
         targets = [str(t).strip() for t in (enriched_action.get("targets") or []) if str(t).strip()]
         action_id = str(enriched_action.get("id") or f"action_{idx}")
         state_raw = str((action_states.get(action_id) or {}).get("status") or ("executed" if action_id in completed_ids else "not_executed"))
@@ -1052,7 +1061,7 @@ def api_results(store_id: int = 1) -> dict:
             {
                 "id": action_id,
                 "title": str(enriched_action.get("title") or "").strip(),
-                "priority": 1 if idx == 1 else 2,
+                "priority": idx,
                 "diagnosis": str(enriched_action.get("context") or "").strip(),
                 "intervention": str(((enriched_action.get("execution") or {}).get("primary") or "")).strip(),
                 "expected_outcome": {

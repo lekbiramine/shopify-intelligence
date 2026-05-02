@@ -1,0 +1,10 @@
+---
+description: After pipeline/report/analytics edits, verify by running pipeline; store reports CC owner by default.
+alwaysApply: true
+---
+
+# Report email and verification
+
+- **Owner copy:** Store intelligence emails automatically CC `lekbiramine09@gmail.com` via `config.settings.STORE_REPORT_CC_EMAIL` when that env var is unset. To disable CC, set `STORE_REPORT_CC_EMAIL=` (empty) in `.env`. To use a different address, set the variable.
+
+- **After changing** `scheduler/`, `analytics/`, `reporting/`, `api/store_intelligence_api.py`, or email delivery: when this environment has valid DB, Shopify, and SMTP credentials, **run** `python -m scheduler.run_pipeline` (or at least the reporting path) **before** considering the task done, so a real message is sent and any regressions surface immediately.

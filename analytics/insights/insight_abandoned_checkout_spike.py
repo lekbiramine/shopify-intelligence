@@ -35,7 +35,7 @@ def run_insight(db: Any) -> dict:
                                       AND created_at < NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END), 0) AS prev_week
                 FROM abandoned_checkouts
             ),
-            orders AS (
+            completed_order_counts AS (
                 SELECT
                     COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '7 days'
                                       AND COALESCE(financial_status, '') NOT IN ('voided', 'cancelled')
@@ -48,19 +48,19 @@ def run_insight(db: Any) -> dict:
             ),
             aov AS (
                 SELECT
-                    COALESCE(AVG(COALESCE(total_price, 0)), 0) AS store_aov
-                FROM orders
-                WHERE created_at >= NOW() - INTERVAL '90 days'
-                  AND COALESCE(financial_status, '') NOT IN ('voided', 'cancelled')
+                    COALESCE(AVG(COALESCE(o2.total_price, 0)), 0) AS store_aov
+                FROM orders o2
+                WHERE o2.created_at >= NOW() - INTERVAL '90 days'
+                  AND COALESCE(o2.financial_status, '') NOT IN ('voided', 'cancelled')
             )
             SELECT
                 COALESCE(a.current_week, 0) AS abandoned_count,
                 COALESCE(a.prev_week, 0) AS prev_week_abandoned_count,
-                COALESCE(o.completed_orders_this_week, 0) AS completed_orders_this_week,
-                COALESCE(o.completed_orders_prev_week, 0) AS completed_orders_prev_week,
+                COALESCE(oc.completed_orders_this_week, 0) AS completed_orders_this_week,
+                COALESCE(oc.completed_orders_prev_week, 0) AS completed_orders_prev_week,
                 COALESCE(s.store_aov, 0) AS store_aov
             FROM abandon a
-            CROSS JOIN orders o
+            CROSS JOIN completed_order_counts oc
             CROSS JOIN aov s;
             """
         )
@@ -70,6 +70,8 @@ def run_insight(db: Any) -> dict:
             cursor.close()
 
     abandoned_count = int(row.get("abandoned_count") or 0)
+    if abandoned_count <= 0:
+        return {"detected": False}
     prev_week_abandoned_count = int(row.get("prev_week_abandoned_count") or 0)
     completed_orders_this_week = int(row.get("completed_orders_this_week") or 0)
     completed_orders_prev_week = int(row.get("completed_orders_prev_week") or 0)
