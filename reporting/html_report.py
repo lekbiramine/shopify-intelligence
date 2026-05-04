@@ -185,8 +185,10 @@ def build_html_report(report_data: dict) -> str:
             str(action.get("action_type") or action.get("type") or ""),
             dict(action.get("metrics") or {}),
         )
-        advice_headline = escape(str(advice.get("headline") or ""))
-        advice_context = escape(str(advice.get("context") or ""))
+        headline_override = action.get("advice_headline_override")
+        context_override = action.get("advice_context_override")
+        advice_headline = escape(str(headline_override or advice.get("headline") or ""))
+        advice_context = escape(str(context_override or advice.get("context") or ""))
         advice_benchmark = escape(str(advice.get("benchmark") or ""))
         advice_urgency = escape(str(advice.get("urgency") or ""))
         playbook_html = _render_playbook(list(advice.get("playbook") or []))

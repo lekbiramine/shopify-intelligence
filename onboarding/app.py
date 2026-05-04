@@ -150,6 +150,7 @@ def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
 
 
 @app.get("/install")
+@app.get("/oauth/install")
 def install(
     shop: str = Query(..., description="Store domain"),
     email: str | None = Query(default=None, description="Optional report recipient"),
@@ -291,7 +292,7 @@ def oauth_callback(
             attach_store_referral(shop_domain, referral_code_id, referral_code_used)
 
         logger.info("Private app install completed for %s", shop_domain)
-        return RedirectResponse(url=f"{FRONTEND_URL.rstrip('/')}/check-your-email", status_code=302)
+        return RedirectResponse(url=f"{FRONTEND_URL.rstrip('/')}/success", status_code=302)
 
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)
