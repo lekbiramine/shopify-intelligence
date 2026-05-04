@@ -4,7 +4,7 @@ import os
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, unquote_plus, urlencode
 
 import requests
 from dotenv import load_dotenv
@@ -35,6 +35,7 @@ load_dotenv()
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY", "")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET", "")
 SHOPIFY_APP_BASE_URL = os.getenv("SHOPIFY_APP_BASE_URL", "")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 SHOPIFY_SCOPES = os.getenv(
     "SHOPIFY_SCOPES",
     "read_products,read_orders,read_customers,read_inventory",
@@ -71,12 +72,36 @@ def _state_hash(state: str) -> str:
     return hashlib.sha256((state or "").encode("utf-8")).hexdigest()
 
 
+def _canonicalize_state(state: str) -> str:
+    """
+    Normalize callback state to avoid hash/signature mismatches caused by
+    double-encoding or accidental surrounding whitespace.
+    """
+    value = (state or "").strip()
+    # Unquote repeatedly (bounded) to handle callbacks that pass an already
+    # decoded state or a still-encoded payload.
+    for _ in range(2):
+        decoded = unquote_plus(value)
+        if decoded == value:
+            break
+        value = decoded
+    return value
+
+
 def _validate_state(state: str, expected_shop: str) -> bool:
-    parts = (state or "").split("|")
+    canonical_state = _canonicalize_state(state)
+    parts = canonical_state.split("|")
     if len(parts) != 4:
         return False
     shop, nonce, issued_at, signature = parts
-    if not nonce or shop != expected_shop:
+    if not nonce:
+        return False
+    try:
+        state_shop = normalize_shop_domain(shop)
+        expected_shop_normalized = normalize_shop_domain(expected_shop)
+    except ValueError:
+        return False
+    if state_shop.casefold() != expected_shop_normalized.casefold():
         return False
     payload = f"{shop}|{nonce}|{issued_at}"
     expected_sig = hmac.new(
@@ -91,7 +116,7 @@ def _validate_state(state: str, expected_shop: str) -> bool:
             return False
     except ValueError:
         return False
-    return consume_oauth_state(_state_hash(state), expected_shop)
+    return consume_oauth_state(_state_hash(canonical_state), expected_shop_normalized)
 
 
 def _normalize_referral_code(ref: str | None) -> str | None:
@@ -266,7 +291,7 @@ def oauth_callback(
             attach_store_referral(shop_domain, referral_code_id, referral_code_used)
 
         logger.info("Private app install completed for %s", shop_domain)
-        return RedirectResponse(url=f"https://{shop_domain}/admin/apps", status_code=302)
+        return RedirectResponse(url=f"{FRONTEND_URL.rstrip('/')}/check-your-email", status_code=302)
 
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)

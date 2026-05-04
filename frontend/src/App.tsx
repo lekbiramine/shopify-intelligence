@@ -1,254 +1,274 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import type { FormEvent, MouseEvent } from 'react'
+import { Route, Routes } from 'react-router-dom'
 
-type Action = {
-  id: string
-  title: string
-  value: number
-  daily_loss: number
-  priority_score: number
-  priority_ratio: number
-  priority_explanation: string
-  rank: number
-  context: string
-  targets: string[]
-  execute_command: string
-  goal: string
-  measured_by: string[]
-  expected_result: {
-    metric: string
-    baseline: number
-    target: number
-    time_window_days: number
-  }
-  baseline_metrics: {
-    orders_7d: number
-    revenue_7d: number
-  }
-  normalized_impact_weight: number
-}
+const pricingFeatures = [
+  'Daily decision report, delivered to your inbox',
+  'Revenue leak detection',
+  'Dead inventory alerts',
+  'VIP customer churn signals',
+  'Abandoned checkout diagnosis',
+  'Margin optimization insights',
+]
 
-type ResultsData = {
-  completed_actions: Array<{
-    action_id: string
-    title: string
-    timestamp_started: string
-    timestamp_completed: string
-    baseline_metrics: { orders_7d: number; revenue_7d: number }
-    value: number
-    daily_loss: number
-  }>
-  before_after_comparison: Array<{
-    action_id: string
-    title: string
-    status: 'validated' | 'pending_validation'
-    before: { orders_7d: number; revenue_7d: number }
-    after: { orders_7d: number; revenue_7d: number }
-    delta: { orders_7d: number; revenue_7d: number }
-    raw_delta: { orders_7d: number; revenue_7d: number }
-    normalized_delta: { orders_7d: number; revenue_7d: number }
-    impact_score: number
-    expected_result: {
-      metric: string
-      baseline: number
-      target: number
-      time_window_days: number
+function LandingPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [email, setEmail] = useState('')
+  const [shopInput, setShopInput] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [shopError, setShopError] = useState('')
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const apiBaseUrl = import.meta.env.VITE_API_URL as string
+
+  useEffect(() => {
+    if (!isModalOpen) {
+      return
     }
-    timestamp_started: string
-    timestamp_completed: string
-  }>
-  total_revenue_recovered_7d: number
-  total_loss_prevented_7d: number
-  roi_efficiency_score: number
-}
 
-type ProofRow = {
-  action_id: string
-  is_valid: boolean
-  confidence_score: number
-  predicted_delta: { orders: number; revenue: number }
-  actual_delta: { orders: number; revenue: number }
-  roi_confirmed: boolean
-}
+    inputRef.current?.focus()
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsModalOpen(false)
+      }
+    }
 
-function currency(value: number): string {
-  return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [isModalOpen])
 
-function useActions(storeId: number) {
-  const [actions, setActions] = useState<Action[]>([])
-  const [loading, setLoading] = useState(true)
-
-  async function loadActions() {
-    setLoading(true)
-    const response = await fetch(`${apiBase}/api/actions?store_id=${storeId}`)
-    const data: Action[] = await response.json()
-    setActions(data)
-    setLoading(false)
+  function normalizeShopDomain(raw: string): string {
+    return raw.trim().replace(/^https?:\/\//i, '').replace(/\/+$/g, '')
   }
 
-  useEffect(() => {
-    void loadActions()
-  }, [storeId])
+  function openModal(event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault()
+    setIsModalOpen(true)
+  }
 
-  return { actions, loading, reload: loadActions }
-}
+  function closeModal() {
+    setIsModalOpen(false)
+  }
 
-function useResults(storeId: number) {
-  const [data, setData] = useState<ResultsData | null>(null)
-  const [proof, setProof] = useState<ProofRow[]>([])
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const trimmedEmail = email.trim()
+    const normalizedShop = normalizeShopDomain(shopInput)
+    let hasError = false
+    const isEmailValid = trimmedEmail.includes('@') && trimmedEmail.includes('.')
 
-  useEffect(() => {
-    fetch(`${apiBase}/api/results?store_id=${storeId}`)
-      .then((res) => res.json())
-      .then((json: ResultsData) => setData(json))
-    fetch(`${apiBase}/api/proof?store_id=${storeId}`)
-      .then((res) => res.json())
-      .then((json: ProofRow[]) => setProof(json))
-  }, [storeId])
+    if (!trimmedEmail || !isEmailValid) {
+      setEmailError('Please enter a valid email address.')
+      hasError = true
+    } else {
+      setEmailError('')
+    }
 
-  return { data, proof }
-}
+    if (!normalizedShop) {
+      setShopError('Please enter your Shopify store URL.')
+      inputRef.current?.focus()
+      hasError = true
+    } else {
+      setShopError('')
+    }
 
-function DashboardPage() {
-  const [search] = useSearchParams()
-  const storeId = Number(search.get('store_id') || '1')
-  const navigate = useNavigate()
-  const { actions, loading, reload } = useActions(storeId)
-  const stats = useMemo(() => {
-    const dailyLoss = actions.reduce((sum, a) => sum + a.daily_loss, 0)
-    const recoverable = actions.reduce((sum, a) => sum + a.value, 0)
-    return { dailyLoss, recoverable, pending: actions.length }
-  }, [actions])
+    if (hasError) {
+      return
+    }
 
-  async function markDone(actionId: string) {
-    await fetch(`${apiBase}/api/complete-action?store_id=${storeId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action_id: actionId }),
-    })
-    await reload()
+    const redirectUrl = `${apiBaseUrl}/install?shop=${encodeURIComponent(normalizedShop)}&email=${encodeURIComponent(trimmedEmail)}`
+    window.location.href = redirectUrl
   }
 
   return (
-    <div className="page">
-      <div className="banner">EXECUTE ACTION #1 NOW</div>
-      <section className="control-center">
-        <article><h4>You are losing</h4><p>{currency(stats.dailyLoss)}/day</p></article>
-        <article><h4>Recoverable today</h4><p>{currency(stats.recoverable)}</p></article>
-        <article><h4>Actions pending</h4><p>{stats.pending}</p></article>
-      </section>
-      <div className="nav-row">
-        <Link to={`/results?store_id=${storeId}`}>Results</Link>
-        <Link to={`/progress?store_id=${storeId}`}>Progress</Link>
-      </div>
-      {loading && <p>Loading actions...</p>}
-      <div className="grid">
-        {actions.map((action) => (
-          <article key={action.id} className="card">
-            <h3>{action.title}</h3>
-            <p>Value: {currency(action.value)}</p>
-            <p>Daily Loss: {currency(action.daily_loss)}</p>
-            <p>Priority Score: {action.priority_score.toFixed(2)}</p>
-            <p className="small">{action.context}</p>
-            <p className="small">{action.priority_explanation}</p>
-            <div className="btn-row">
-              <button type="button" onClick={() => navigate(`/action/${action.id}?store_id=${storeId}`)}>VIEW</button>
-              <button type="button" onClick={() => void markDone(action.id)}>MARK AS DONE</button>
+    <div className="site-shell">
+      <header className="header">
+        <div className="logo" aria-label="Perspicor logo">
+          <img src="/favicon.svg" alt="Perspicor" />
+          <span>PERSPICOR</span>
+        </div>
+        <a className="pill-button" href="#" onClick={openModal}>
+          Diagnose My Store Free
+        </a>
+      </header>
+
+      <main className="content">
+        <section className="hero">
+          <h1>Unmatched Perspicacity for Your Shopify Store</h1>
+          <p className="hero-subheadline">
+            Most Shopify apps show you numbers. Perspicor tells you exactly what to do — and what
+            it costs you every day you wait.
+          </p>
+          <a className="primary-button" href="#" onClick={openModal}>
+            Find Out What's Killing Your Revenue — Free
+          </a>
+          <p className="hero-footnote">No credit card. No setup. Your first diagnosis in 24 hours.</p>
+        </section>
+
+        <section className="problem">
+          <h2>You&apos;re working harder. The numbers don&apos;t show it.</h2>
+          <p className="problem-subheading">
+            Most Shopify stores are bleeding revenue from 3 places they never check.
+          </p>
+          <div className="problem-grid">
+            <article className="problem-card">
+              <p>
+                <strong>Dead inventory</strong> — Products sitting unsold for 90+ days. Every day
+                they sit, your cash flow shrinks and your competitors take your buyers.
+              </p>
+            </article>
+            <article className="problem-card">
+              <p>
+                <strong>Fading VIP customers</strong> — Your best customers are going quiet. You
+                won&apos;t notice until they&apos;re gone — and replacing them costs 5x more.
+              </p>
+            </article>
+            <article className="problem-card">
+              <p>
+                <strong>Abandoned checkouts</strong> — People wanted to buy. Something stopped
+                them. You never found out what.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section className="how-it-works">
+          <h2>How It Works</h2>
+          <div className="how-cards">
+            <article className="how-card">
+              <p className="how-number">01</p>
+              <h3>Connect in 60 seconds</h3>
+              <p>Link your Shopify store. No setup, no spreadsheets, no consultants.</p>
+            </article>
+            <article className="how-card">
+              <p className="how-number">02</p>
+              <h3>We diagnose overnight</h3>
+              <p>
+                Perspicor scans your inventory, customers, checkouts, and margins while you sleep.
+              </p>
+            </article>
+            <article className="how-card">
+              <p className="how-number">03</p>
+              <h3>Wake up to decisions</h3>
+              <p>
+                Not a dashboard. Not charts. A ranked list of exactly what to fix and what it costs
+                you to wait.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="pricing" className="pricing">
+          <article className="pricing-card">
+            <p className="pricing-label">Early Access Price</p>
+            <div className="price-row">
+              <span className="price-old">$99/month</span>
+              <span className="price-new">$79/month</span>
             </div>
+            <ul className="feature-list">
+              {pricingFeatures.map((feature) => (
+                <li key={feature}>{feature}</li>
+              ))}
+            </ul>
+            <a className="primary-button" href="#" onClick={openModal}>
+              Find Out What's Killing Your Revenue — Free
+            </a>
+            <p className="pricing-footnote">Cancel anytime. No contracts.</p>
           </article>
-        ))}
-      </div>
-    </div>
-  )
-}
+        </section>
+      </main>
 
-function ActionPage() {
-  const [search] = useSearchParams()
-  const storeId = Number(search.get('store_id') || '1')
-  const { id } = useParams()
-  const { actions } = useActions(storeId)
-  const action = actions.find((x) => x.id === id)
-  if (!action) return <div className="page">Action not found.</div>
+      <footer className="footer">
+        <p>© 2026 Perspicor. All rights reserved.</p>
+      </footer>
 
-  return (
-    <div className="page">
-      <Link to={`/dashboard?store_id=${storeId}`}>Back</Link>
-      <h2>{action.title}</h2>
-      <p><strong>Why this matters:</strong> {action.context}</p>
-      <p><strong>Targets:</strong> {action.targets.join(' | ')}</p>
-      <p><strong>Exact execution:</strong> {action.execute_command}</p>
-      <p><strong>Goal:</strong> reach {action.expected_result.target} {action.expected_result.metric} in {action.expected_result.time_window_days} days</p>
-      <p><strong>Measured by:</strong> {action.measured_by.join(', ')}</p>
-    </div>
-  )
-}
-
-function ResultsPage() {
-  const [search] = useSearchParams()
-  const storeId = Number(search.get('store_id') || '1')
-  const { data, proof } = useResults(storeId)
-  if (!data) return <div className="page">Loading results...</div>
-  const proofByAction = new Map(proof.map((p) => [p.action_id, p]))
-
-  return (
-    <div className="page">
-      <Link to={`/dashboard?store_id=${storeId}`}>Back</Link>
-      <h2>Results</h2>
-      <section className="card">
-        <h3>System Impact This Week</h3>
-        <p>Total Revenue Recovered (7d): {currency(data.total_revenue_recovered_7d)}</p>
-        <p>Total Loss Prevented (7d): {currency(data.total_loss_prevented_7d)}</p>
-        <p>ROI Efficiency Score: {data.roi_efficiency_score.toFixed(2)}</p>
-      </section>
-      {data.before_after_comparison.map((row) => {
-        const p = proofByAction.get(row.action_id)
-        if (!p) return null
-        const isValidated = row.status === 'validated'
-        return (
-          <article key={row.action_id} className="card">
-            <p><strong>{row.title}</strong></p>
-            {isValidated ? (
-              <>
-                <p><strong style={{ color: '#15803d' }}>ROI CONFIRMED</strong></p>
-                <p>Before: {row.before.orders_7d} orders / {currency(row.before.revenue_7d)}</p>
-                <p>After: {row.after.orders_7d} orders / {currency(row.after.revenue_7d)}</p>
-                <p>Delta: {row.raw_delta.orders_7d} orders / {currency(row.raw_delta.revenue_7d)}</p>
-                <p>Confidence score: {p.confidence_score.toFixed(2)}</p>
-              </>
-            ) : (
-              <>
-                <p><strong style={{ color: '#ca8a04' }}>IMPACT IN PROGRESS</strong></p>
-                <p>Baseline: {row.before.orders_7d} orders / {currency(row.before.revenue_7d)}</p>
-                <p>
-                  Expected result: {row.expected_result.target} {row.expected_result.metric} in{' '}
-                  {row.expected_result.time_window_days} days
-                </p>
-                <p className="small">Waiting for 24h validation window</p>
-              </>
-            )}
+      {isModalOpen && (
+        <div className="modal-overlay" onClick={closeModal} role="presentation">
+          <article className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" type="button" onClick={closeModal} aria-label="Close modal">
+              ×
+            </button>
+            <h2>Enter your Shopify store URL</h2>
+            <p className="modal-subtext">We&apos;ll connect securely via Shopify. Takes 60 seconds.</p>
+            <form onSubmit={handleSubmit}>
+              <label
+                style={{
+                  color: '#8888AA',
+                  fontSize: '12px',
+                  marginBottom: '6px',
+                  display: 'block',
+                }}
+              >
+                Your email
+              </label>
+              <input
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{
+                  background: '#08080F',
+                  border: '1px solid #1E1E35',
+                  borderRadius: '6px',
+                  color: '#FFFFFF',
+                  padding: '12px 16px',
+                  fontSize: '14px',
+                  width: '100%',
+                  marginBottom: '12px',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {emailError && (
+                <p style={{ color: '#FF6B6B', margin: '0 0 12px 0', fontSize: '12px' }}>{emailError}</p>
+              )}
+              <label
+                style={{
+                  color: '#8888AA',
+                  fontSize: '12px',
+                  marginBottom: '6px',
+                  display: 'block',
+                }}
+              >
+                Your Shopify store URL
+              </label>
+              <input
+                ref={inputRef}
+                type="text"
+                value={shopInput}
+                onChange={(event) => setShopInput(event.target.value)}
+                placeholder="mystore.myshopify.com"
+                aria-label="Shopify store URL"
+              />
+              {shopError && (
+                <p style={{ color: '#FF6B6B', margin: '6px 0 0 0', fontSize: '12px' }}>{shopError}</p>
+              )}
+              <button type="submit" className="primary-button modal-submit">
+                Connect My Store
+              </button>
+            </form>
+            <p className="modal-footnote">
+              You&apos;ll be redirected to Shopify to approve access. We never store your password.
+            </p>
           </article>
-        )
-      })}
+        </div>
+      )}
     </div>
   )
 }
 
-function ProgressPage() {
-  const [search] = useSearchParams()
-  const storeId = Number(search.get('store_id') || '1')
-  const { data } = useResults(storeId)
-  if (!data) return <div className="page">Loading progress...</div>
+function CheckYourEmailPage() {
   return (
-    <div className="page">
-      <Link to={`/dashboard?store_id=${storeId}`}>Back</Link>
-      <h2>Progress</h2>
-      <p>Actions completed: {data.completed_actions.length}</p>
-      <p>Total revenue recovered (7d): {currency(data.total_revenue_recovered_7d)}</p>
-      <p>Total loss prevented (7d): {currency(data.total_loss_prevented_7d)}</p>
-      <p>ROI efficiency score: {data.roi_efficiency_score.toFixed(2)}</p>
+    <div className="success-page">
+      <article className="success-card">
+        <div className="success-icon" aria-hidden="true">
+          ✓
+        </div>
+        <h1>You&apos;re in. Check your email.</h1>
+        <p>
+          Your first Perspicor report is being generated. It will land in your inbox within 24
+          hours. Close this tab and go run your store.
+        </p>
+      </article>
     </div>
   )
 }
@@ -256,11 +276,8 @@ function ProgressPage() {
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<DashboardPage />} />
-      <Route path="/dashboard" element={<DashboardPage />} />
-      <Route path="/action/:id" element={<ActionPage />} />
-      <Route path="/results" element={<ResultsPage />} />
-      <Route path="/progress" element={<ProgressPage />} />
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/check-your-email" element={<CheckYourEmailPage />} />
     </Routes>
   )
 }
