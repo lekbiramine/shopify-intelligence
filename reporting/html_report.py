@@ -158,8 +158,8 @@ def _render_targets(targets: list[dict], action_type: str) -> str:
     return "".join(rows)
 
 
-def build_html_report(report_data: dict) -> str:
-    store_name = escape(str(report_data.get("store_name") or "Store Intelligence"))
+def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) -> str:
+    store_name = escape(str(report_data.get("store_name") or "Perspicor"))
     date_text = escape(str(report_data.get("date") or ""))
     status_label, status_fg, status_bg = _status_badge(str(report_data.get("status") or "warning"))
 
@@ -244,12 +244,13 @@ def build_html_report(report_data: dict) -> str:
         "<tr><td style=\"color:#8888AA; padding:8px 0 0 0;\">No actions detected for today.</td></tr>"
     )
 
+    safe_unsubscribe_url = escape(str(unsubscribe_url or "#"), quote=True)
     return (
         "<!doctype html>"
         "<html><head>"
         "<meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
-        "<title>Store Intelligence Report</title>"
+        "<title>Perspicor Daily Report</title>"
         "</head>"
         "<body style=\"margin:0; padding:0; background-color:#08080F; font-family:system-ui, -apple-system, Arial, sans-serif;\">"
         "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#08080F;\">"
@@ -319,9 +320,9 @@ def build_html_report(report_data: dict) -> str:
         f"{actions_html}"
         "<tr><td style=\"padding:8px 0 0 0; border-top:1px solid #1E1E35;\">"
         "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">"
-        "<tr><td align=\"center\" style=\"padding:12px 0 4px 0; color:#333355; font-size:11px;\">Store Intelligence Report - Confidential</td></tr>"
+        "<tr><td align=\"center\" style=\"padding:12px 0 4px 0; color:#333355; font-size:11px;\">Perspicor Daily Report - Confidential</td></tr>"
         "<tr><td align=\"center\" style=\"padding:0 0 10px 0; font-size:11px;\">"
-        "<a href=\"#\" style=\"color:#333355; text-decoration:underline;\">Unsubscribe</a>"
+        f"<a href=\"{safe_unsubscribe_url}\" style=\"color:#333355; text-decoration:underline;\">Unsubscribe</a>"
         "</td></tr>"
         "</table>"
         "</td></tr>"

@@ -6,7 +6,7 @@ logger = get_logger(__name__)
 
 def get_email_subject() -> str:
     today = datetime.now(timezone.utc).strftime("%B %d, %Y")
-    return f"Store Intelligence Report — {today}"
+    return f"Perspicor Daily Report — {today}"
 
 
 def get_action_email_subject(top_action_daily_loss: float) -> str:
@@ -41,7 +41,7 @@ def wrap_email_body(report_body: str) -> str:
     today = datetime.now(timezone.utc).strftime("%B %d, %Y")
 
     header = (
-        f"Daily Store Intelligence Report\n"
+        f"Daily Perspicor Report\n"
         f"Generated: {today} (UTC)\n"
         f"{'=' * 50}\n"
         "This report was generated automatically by your Shopify automation pipeline.\n"

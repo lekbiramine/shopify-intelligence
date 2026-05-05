@@ -1,7 +1,9 @@
 import hashlib
+import html
 import hmac
 import os
 import secrets
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, unquote_plus, urlencode
@@ -9,19 +11,22 @@ from urllib.parse import parse_qsl, unquote_plus, urlencode
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from config.logging_config import get_logger
 from db.queries import (
     attach_store_referral,
     consume_oauth_state,
     create_oauth_state,
+    enable_report_schedule_by_email,
     get_active_referral_code_by_code,
     get_store_by_domain,
+    disable_report_schedule_by_email,
     set_store_referral_code,
     upsert_store_connection,
     upsert_store_contact_email,
 )
+from scheduler.run_pipeline import run_reporting_for_store
 from utils.shopify_auth import (
     fetch_access_scopes,
     normalize_shop_domain,
@@ -190,6 +195,7 @@ def oauth_callback(
     shop: str = Query(...),
     code: str = Query(...),
     state: str = Query(...),
+    email: str | None = Query(default=None),
 ) -> PlainTextResponse:
     try:
         _ensure_oauth_env()
@@ -288,6 +294,20 @@ def oauth_callback(
             referral_code_id=referral_code_id,
         )
 
+        recipient = (email or "").strip()
+        if recipient:
+            upsert_store_contact_email(shop_domain, recipient)
+
+        store = get_store_by_domain(shop_domain)
+        store_id = int((store or {}).get("id") or 0)
+        if store_id > 0:
+            thread = threading.Thread(
+                target=lambda sid: run_reporting_for_store(store_id=sid),
+                args=(store_id,),
+            )
+            thread.daemon = True
+            thread.start()
+
         if referral_code_id and referral_code_used:
             attach_store_referral(shop_domain, referral_code_id, referral_code_used)
 
@@ -306,3 +326,136 @@ def oauth_callback(
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/unsubscribe")
+def unsubscribe(
+    email: str = Query(..., description="Recipient email to unsubscribe"),
+    action: str = Query(default="unsubscribe", description="unsubscribe or subscribe"),
+) -> HTMLResponse:
+    recipient = (email or "").strip()
+    if not recipient:
+        return HTMLResponse("<h1>Invalid unsubscribe link.</h1>", status_code=400)
+    normalized_action = (action or "unsubscribe").strip().lower()
+    if normalized_action == "subscribe":
+        changed = enable_report_schedule_by_email(recipient)
+        title = "You're subscribed again."
+        subtitle = (
+            "Daily Perspicor reports are active again for this address."
+            if changed > 0
+            else "This address is already subscribed."
+        )
+        cta_href = ""
+        cta_text = ""
+    else:
+        changed = disable_report_schedule_by_email(recipient)
+        title = "You're unsubscribed."
+        subtitle = (
+            "You will no longer receive daily Perspicor reports at this address."
+            if changed > 0
+            else "This address is already unsubscribed."
+        )
+        cta_href = f"/unsubscribe?{urlencode({'email': recipient, 'action': 'subscribe'})}"
+        cta_text = "Subscribe again"
+
+    safe_title = html.escape(title)
+    safe_subtitle = html.escape(subtitle)
+    safe_recipient = html.escape(recipient)
+    safe_cta_href = html.escape(cta_href, quote=True)
+    safe_cta_text = html.escape(cta_text)
+    cta_html = (
+        f'<div><a class="cta" href="{safe_cta_href}">{safe_cta_text}</a></div>'
+        if safe_cta_href and safe_cta_text
+        else ""
+    )
+
+    brand_html = f"""
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Perspicor Email Preferences</title>
+    <style>
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #08080f;
+        color: #fff;
+      }}
+      .shell {{
+        min-height: 100vh;
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 24px 20px 40px;
+      }}
+      .brand {{
+        color: #fff;
+        letter-spacing: 0.22em;
+        font-weight: 800;
+        font-size: 18px;
+        text-transform: uppercase;
+      }}
+      .card {{
+        margin-top: 72px;
+        background: #12121e;
+        border: 1px solid #1e1e35;
+        border-radius: 12px;
+        padding: 28px;
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+      }}
+      h1 {{
+        margin: 0;
+        font-size: 32px;
+        line-height: 1.15;
+      }}
+      p {{
+        margin: 14px 0 0;
+        color: #8888aa;
+        line-height: 1.65;
+        max-width: 56ch;
+      }}
+      .pill {{
+        display: inline-block;
+        margin-top: 20px;
+        color: #7b88ff;
+        background: #0d0d2b;
+        border: 1px solid #5c6bff;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        letter-spacing: 0.05em;
+      }}
+      .cta {{
+        display: inline-block;
+        margin-top: 22px;
+        background: #5c6bff;
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+        border-radius: 8px;
+        padding: 12px 16px;
+      }}
+      .legal {{
+        margin-top: 18px;
+        font-size: 12px;
+        color: #555570;
+      }}
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="brand">Perspicor</div>
+      <section class="card">
+        <h1>{safe_title}</h1>
+        <p>{safe_subtitle}</p>
+        <div class="pill">{safe_recipient}</div>
+        {cta_html}
+        <p class="legal">You can change this anytime from your next report email.</p>
+      </section>
+    </main>
+  </body>
+</html>
+"""
+    return HTMLResponse(brand_html, status_code=200)

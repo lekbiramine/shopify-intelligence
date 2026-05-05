@@ -9,7 +9,12 @@ from psycopg2.extras import RealDictCursor
 from config.logging_config import get_logger
 from config import constants as app_constants
 from config import settings
-from db.queries import create_report_record, get_store_contact_email_by_id, update_store_auth_tokens
+from db.queries import (
+    create_report_record,
+    get_store_contact_email_by_id,
+    list_manual_reportable_stores,
+    update_store_auth_tokens,
+)
 from etl.extract import (
     deduplicate_customers_from_orders,
     fetch_products,
@@ -75,6 +80,15 @@ REGISTERED_INSIGHT_RUNNERS = (
     run_abandoned_checkout_spike_insight,
     run_low_margin_products_insight,
 )
+
+
+def _is_likely_test_store(shop_domain: str) -> bool:
+    domain = (shop_domain or "").strip().lower()
+    if not domain:
+        return True
+    # Keep manual all-client runs focused on real connected shops.
+    # Test domains commonly include "test" or start with "live-".
+    return domain.startswith("live-") or "test" in domain
 
 
 def _log_insight_detection_line(slug: str, detected: bool) -> None:
@@ -858,31 +872,56 @@ def run_reporting() -> None:
 
 @log_execution
 def run_pipeline() -> None:
-    # Backwards compatible: single-store run via env vars
     logger.info("=" * 50)
     logger.info("PIPELINE STARTED")
     logger.info("=" * 50)
 
-    settings.validate_shopify_pipeline_env()
     settings.validate_email_env()
-    # If you're using the legacy single-store mode, you must have already created one store row.
-    from db.queries import get_store_by_domain
+    stores = list_manual_reportable_stores()
+    if not stores:
+        logger.warning(
+            "No reportable stores found. Ensure stores are active, have contact_email, "
+            "and report_schedule_active=TRUE."
+        )
+        return
 
-    store = get_store_by_domain(settings.SHOPIFY_STORE_URL)
-    if not store:
-        raise RuntimeError("No store row found for SHOPIFY_STORE_URL; connect the store via onboarding first.")
-
-    run_etl_for_store(
-        store_id=store["id"],
-        shop_domain=settings.SHOPIFY_STORE_URL,
-        access_token=store.get("access_token") or settings.SHOPIFY_ACCESS_TOKEN,
-        refresh_token=store.get("refresh_token"),
-        access_token_expires_at=store.get("access_token_expires_at"),
-    )
-    run_reporting_for_store(store_id=store["id"])
+    logger.info("Running manual pipeline for %s stores.", len(stores))
+    succeeded = 0
+    failed = 0
+    skipped = 0
+    attempted = 0
+    for store in stores:
+        store_id = int(store["id"])
+        shop_domain = str(store.get("shop_domain") or "").strip()
+        if _is_likely_test_store(shop_domain):
+            skipped += 1
+            logger.info("Skipping likely test store %s (store_id=%s)", shop_domain, store_id)
+            continue
+        attempted += 1
+        try:
+            run_etl_for_store(
+                store_id=store_id,
+                shop_domain=shop_domain,
+                access_token=str(store.get("access_token") or "").strip(),
+                refresh_token=(str(store.get("refresh_token") or "").strip() or None),
+                access_token_expires_at=store.get("access_token_expires_at"),
+            )
+            run_reporting_for_store(store_id=store_id)
+            logger.info("Manual pipeline completed for %s (store_id=%s)", shop_domain, store_id)
+            succeeded += 1
+        except Exception:
+            logger.exception("Manual pipeline failed for %s (store_id=%s)", shop_domain, store_id)
+            failed += 1
 
     logger.info("=" * 50)
-    logger.info("PIPELINE COMPLETED SUCCESSFULLY")
+    logger.info(
+        "PIPELINE FINISHED | total=%s attempted=%s succeeded=%s failed=%s skipped=%s",
+        len(stores),
+        attempted,
+        succeeded,
+        failed,
+        skipped,
+    )
     logger.info("=" * 50)
 
 

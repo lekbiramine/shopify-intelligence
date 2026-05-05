@@ -1,5 +1,7 @@
 import smtplib
 import ssl
+import os
+from urllib.parse import urlencode
 from email.message import EmailMessage
 from config import settings
 from config.logging_config import get_logger
@@ -87,9 +89,13 @@ def send_store_report_email(*, store_id: int, report_data: dict) -> str:
         f"⚡ {str(report_data.get('store_name') or f'Store {store_id}')} — "
         f"{len(actions)} actions worth ${_format_subject_money(report_data.get('total_value'))} today"
     )
-    html_content = build_html_report(report_data)
+    base_url = os.getenv("SHOPIFY_APP_BASE_URL", "").strip().rstrip("/")
+    unsubscribe_url = None
+    if base_url and recipient:
+        unsubscribe_url = f"{base_url}/unsubscribe?{urlencode({'email': recipient})}"
+    html_content = build_html_report(report_data, unsubscribe_url=unsubscribe_url)
     plain_body = (
-        f"{report_data.get('store_name') or f'Store {store_id}'} intelligence report\n"
+        f"{report_data.get('store_name') or f'Store {store_id}'} daily report\n"
         f"Date: {report_data.get('date') or ''}\n"
         f"Actions: {len(actions)}\n"
         f"Total value: ${_format_subject_money(report_data.get('total_value'))}\n"

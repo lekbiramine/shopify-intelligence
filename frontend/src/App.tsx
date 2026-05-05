@@ -517,6 +517,7 @@ function LandingPage() {
 }
 
 function ConnectPage() {
+  const [email, setEmail] = useState('')
   const [shop, setShop] = useState('')
   const [error, setError] = useState('')
 
@@ -537,7 +538,7 @@ function ConnectPage() {
       setError('Configuration error: API URL is not set.')
       return
     }
-    window.location.href = `${base}/oauth/install?shop=${encodeURIComponent(normalized)}`
+    window.location.href = `${base}/oauth/install?shop=${encodeURIComponent(normalized)}&email=${encodeURIComponent(email.trim())}`
   }
 
   return (
@@ -545,8 +546,24 @@ function ConnectPage() {
       <SiteHeader />
       <main className="connect-main">
         <form className="connect-form" onSubmit={handleSubmit} noValidate>
+          <label className="connect-label" htmlFor="contact-email">
+            Where should we send your daily report?
+          </label>
+          <input
+            id="contact-email"
+            className="connect-input"
+            type="email"
+            name="email"
+            autoComplete="email"
+            placeholder="your@email.com"
+            required
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value)
+            }}
+          />
           <label className="connect-label" htmlFor="shop-domain">
-            Enter your Shopify store URL
+            Your Shopify store URL
           </label>
           <input
             id="shop-domain"
@@ -555,6 +572,7 @@ function ConnectPage() {
             name="shop"
             autoComplete="url"
             placeholder="your-store.myshopify.com"
+            required
             value={shop}
             onChange={(e) => {
               setShop(e.target.value)
@@ -579,8 +597,8 @@ function SuccessPage() {
     <div className="success-shell">
       <SiteHeader />
       <main className="success-main">
-        <h1 className="success-title">You&apos;re in. Your first diagnosis is running.</h1>
-        <p className="success-sub">Check your inbox tomorrow morning. We&apos;re scanning your store overnight.</p>
+        <h1 className="success-title">You&apos;re in. Your report is on its way.</h1>
+        <p className="success-sub">We&apos;re scanning your store right now. Your first Perspicor report will land in your inbox in the next few minutes. Close this tab and go run your store.</p>
       </main>
     </div>
   )

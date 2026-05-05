@@ -368,6 +368,55 @@ def update_store_contact_email(shop_domain: str, contact_email: str) -> None:
     logger.info(f"Updated contact email for store: {shop_domain}")
 
 
+def disable_report_schedule_by_email(contact_email: str) -> int:
+    sql = """
+        UPDATE stores
+        SET report_schedule_active = FALSE,
+            updated_at = NOW()
+        WHERE LOWER(TRIM(contact_email)) = LOWER(TRIM(%s))
+        RETURNING id;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (contact_email,))
+        rows = cursor.fetchall() or []
+        return len(rows)
+
+
+def enable_report_schedule_by_email(contact_email: str) -> int:
+    sql = """
+        UPDATE stores
+        SET report_schedule_active = TRUE,
+            updated_at = NOW()
+        WHERE LOWER(TRIM(contact_email)) = LOWER(TRIM(%s))
+        RETURNING id;
+    """
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(sql, (contact_email,))
+        rows = cursor.fetchall() or []
+        return len(rows)
+
+
+def list_manual_reportable_stores() -> list[dict]:
+    sql = """
+        SELECT id,
+               shop_domain,
+               access_token,
+               refresh_token,
+               access_token_expires_at,
+               contact_email
+        FROM stores
+        WHERE is_active = TRUE
+          AND report_schedule_active = TRUE
+          AND contact_email IS NOT NULL
+          AND access_token IS NOT NULL
+        ORDER BY id ASC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql)
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
+
+
 # ─── Products ───────────────────────────────────────────────────────────────
 
 def upsert_product(product: dict, cursor=None) -> None:

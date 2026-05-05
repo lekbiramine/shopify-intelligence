@@ -1598,7 +1598,7 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
         canvas.saveState()
         canvas.setFillColor(colors.HexColor("#0F172A"))
         canvas.setFont("Helvetica-Bold", 9)
-        canvas.drawString(doc.leftMargin, LETTER[1] - 28, "Store Intelligence")
+        canvas.drawString(doc.leftMargin, LETTER[1] - 28, "Perspicor")
         canvas.setFillColor(colors.HexColor("#64748B"))
         canvas.setFont("Helvetica", 8.5)
         canvas.drawRightString(LETTER[0] - doc.rightMargin, LETTER[1] - 28, f"{datetime.now(timezone.utc).strftime('%b %d, %Y')}")
@@ -1629,7 +1629,7 @@ def create_report_pdf(report_data: dict, output_dir: str = "reports", task_secti
         rightMargin=40,
         topMargin=40,
         bottomMargin=40,
-        title="Store Intelligence Report",
+        title="Perspicor Daily Report",
         author="Shopify Automation Pipeline",
     )
     doc.build(story, onFirstPage=_draw_first_page_header_footer, onLaterPages=_draw_later_pages_footer)
