@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from html import escape
+import os
+import re
 
 from reporting.advice_engine import get_action_advice
 
@@ -46,6 +48,19 @@ def _safe_text(value: object, *, default: str = "—") -> str:
     if not text or text.lower() in {"n/a", "none", "n/a - not relevant"}:
         return default
     return text
+
+
+def _minify_email_html(html: str) -> str:
+    """
+    Keep markup lean to reduce Gmail clipping.
+    """
+    compact = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+    compact = re.sub(r">\s+<", "><", compact)
+    compact = re.sub(r"\s{2,}", " ", compact)
+    compact = re.sub(r";\s+", ";", compact)
+    compact = re.sub(r":\s+", ":", compact)
+    compact = re.sub(r",\s+", ",", compact)
+    return compact.strip()
 
 
 def _render_targets(targets: list[dict], action_type: str) -> str:
@@ -162,6 +177,13 @@ def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) 
     store_name = escape(str(report_data.get("store_name") or "Perspicor"))
     date_text = escape(str(report_data.get("date") or ""))
     status_label, status_fg, status_bg = _status_badge(str(report_data.get("status") or "warning"))
+    logo_src = (os.getenv("PERSPICOR_LOGO_URL") or "").strip() or "https://perspicor.com/logo/perspicor-dark.png"
+    footer_logo_html = (
+        f"<img src=\"{escape(logo_src, quote=True)}\" alt=\"Perspicor\" "
+        "style=\"display:block; margin:0 auto; height:28px; width:auto;\" />"
+        if logo_src
+        else "<div style=\"color:#141423; font-size:18px; font-weight:700; letter-spacing:0.3px;\">Perspicor</div>"
+    )
 
     daily_impact = _fmt_money(report_data.get("daily_impact"))
     total_value = _fmt_money(report_data.get("total_value"))
@@ -201,7 +223,6 @@ def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) 
             if target_rows
             else ""
         )
-
         action_blocks.append(
             "<tr>"
             "<td style=\"padding:0 0 14px 0;\">"
@@ -245,7 +266,7 @@ def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) 
     )
 
     safe_unsubscribe_url = escape(str(unsubscribe_url or "#"), quote=True)
-    return (
+    html = (
         "<!doctype html>"
         "<html><head>"
         "<meta charset=\"utf-8\">"
@@ -260,7 +281,7 @@ def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) 
         "<tr><td style=\"padding:0 0 14px 0;\">"
         "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">"
         "<tr>"
-        f"<td style=\"color:#8888AA; font-size:13px; text-transform:uppercase; letter-spacing:2px;\">{store_name}</td>"
+        f"<td style=\"color:#FFFFFF; font-size:16px; font-weight:700; letter-spacing:0.2px;\">{store_name}</td>"
         f"<td align=\"right\" style=\"color:#8888AA; font-size:13px;\">{date_text}</td>"
         "</tr>"
         "<tr><td colspan=\"2\" style=\"padding-top:8px;\"><div style=\"height:1px; background-color:#5C6BFF; line-height:1px;\">&nbsp;</div></td></tr>"
@@ -328,6 +349,17 @@ def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) 
         "</td></tr>"
         "</table>"
         "</td></tr>"
+        "<tr><td align=\"center\" style=\"padding:0; background-color:#F6F7FA;\">"
+        "<table role=\"presentation\" width=\"620\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" "
+        "style=\"width:100%; max-width:620px; background-color:#F6F7FA;\">"
+        "<tr><td align=\"center\" style=\"padding:22px 20px 20px 20px;\">"
+        f"{footer_logo_html}"
+        "<div style=\"margin-top:10px; color:#141423; font-size:13px; font-weight:600; letter-spacing:0.2px;\">perspicor.com</div>"
+        "<div style=\"margin-top:6px; color:#9AA0AD; font-size:11px; line-height:1.5;\">Unmatched perspicacity for your shopify store</div>"
+        "</td></tr>"
+        "</table>"
+        "</td></tr>"
         "</table>"
         "</body></html>"
     )
+    return _minify_email_html(html)

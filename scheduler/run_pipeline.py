@@ -12,6 +12,9 @@ from config import settings
 from db.queries import (
     create_report_record,
     get_store_contact_email_by_id,
+    get_store_display_name_by_id,
+    update_store_display_name_by_id,
+    deactivate_likely_test_stores,
     list_manual_reportable_stores,
     update_store_auth_tokens,
 )
@@ -51,6 +54,7 @@ from tasks.engine import (
 from utils.decorators import log_execution
 from utils.shopify_auth import (
     fetch_access_scopes,
+    fetch_shop_display_name,
     migrate_non_expiring_offline_token,
     refresh_access_token,
     validate_access_token,
@@ -80,15 +84,6 @@ REGISTERED_INSIGHT_RUNNERS = (
     run_abandoned_checkout_spike_insight,
     run_low_margin_products_insight,
 )
-
-
-def _is_likely_test_store(shop_domain: str) -> bool:
-    domain = (shop_domain or "").strip().lower()
-    if not domain:
-        return True
-    # Keep manual all-client runs focused on real connected shops.
-    # Test domains commonly include "test" or start with "live-".
-    return domain.startswith("live-") or "test" in domain
 
 
 def _log_insight_detection_line(slug: str, detected: bool) -> None:
@@ -213,6 +208,14 @@ def run_etl_for_store(
     token_ok, token_detail = validate_access_token(shop_domain, access_token)
     if not token_ok:
         raise RuntimeError(f"Token validation failed for {shop_domain}: {token_detail}")
+
+    # Best-effort: persist the merchant-facing store name for nicer emails.
+    try:
+        shop_name = fetch_shop_display_name(shop_domain, access_token)
+        if shop_name:
+            update_store_display_name_by_id(store_id=store_id, display_name=shop_name)
+    except Exception:
+        logger.debug("Unable to fetch/persist display_name for %s", shop_domain)
     scopes = fetch_access_scopes(shop_domain, access_token)
     logger.info("Granted scopes for %s: %s", shop_domain, ",".join(scopes))
     scopes_ok, scopes_detail = validate_read_only_scopes(scopes)
@@ -791,7 +794,7 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
 
     generated_at = str(report_payload.get("generated_at") or "")
     date_label = generated_at.split("T", 1)[0] if "T" in generated_at else generated_at
-    store_name = f"Store {store_id}"
+    store_name = get_store_display_name_by_id(store_id) or f"Store {store_id}"
 
     return {
         "store_name": store_name,
@@ -877,6 +880,16 @@ def run_pipeline() -> None:
     logger.info("=" * 50)
 
     settings.validate_email_env()
+
+    # Ensure the DB itself stays clean: legacy demo/test shops should not be scheduled.
+    deactivated = deactivate_likely_test_stores()
+    if deactivated:
+        logger.warning(
+            "Deactivated %s legacy test/demo stores that were still scheduled: %s",
+            len(deactivated),
+            ", ".join(f"{r.get('shop_domain')} (id={r.get('id')})" for r in deactivated),
+        )
+
     stores = list_manual_reportable_stores()
     if not stores:
         logger.warning(
@@ -888,15 +901,10 @@ def run_pipeline() -> None:
     logger.info("Running manual pipeline for %s stores.", len(stores))
     succeeded = 0
     failed = 0
-    skipped = 0
     attempted = 0
     for store in stores:
         store_id = int(store["id"])
         shop_domain = str(store.get("shop_domain") or "").strip()
-        if _is_likely_test_store(shop_domain):
-            skipped += 1
-            logger.info("Skipping likely test store %s (store_id=%s)", shop_domain, store_id)
-            continue
         attempted += 1
         try:
             run_etl_for_store(
@@ -915,12 +923,11 @@ def run_pipeline() -> None:
 
     logger.info("=" * 50)
     logger.info(
-        "PIPELINE FINISHED | total=%s attempted=%s succeeded=%s failed=%s skipped=%s",
+        "PIPELINE FINISHED | total=%s attempted=%s succeeded=%s failed=%s",
         len(stores),
         attempted,
         succeeded,
         failed,
-        skipped,
     )
     logger.info("=" * 50)
 

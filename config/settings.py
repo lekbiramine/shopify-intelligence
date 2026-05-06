@@ -16,10 +16,17 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
 
 # Email
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
+# The displayed From header can differ from the SMTP login identity.
+# Defaults to EMAIL_SENDER for backwards compatibility.
+EMAIL_FROM = (os.getenv("EMAIL_FROM") or "").strip() or EMAIL_SENDER
+# SMTP username/login (Gmail address). Defaults to EMAIL_SENDER.
+SMTP_USERNAME = (os.getenv("SMTP_USERNAME") or "").strip() or EMAIL_SENDER
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 EMAIL_RECIPIENT = os.getenv("EMAIL_RECIPIENT")
 SMTP_HOST = os.getenv("SMTP_HOST")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USE_SSL = (os.getenv("SMTP_USE_SSL") or "").strip().lower() in {"1", "true", "yes", "on"}
+SMTP_USE_STARTTLS = (os.getenv("SMTP_USE_STARTTLS") or "").strip().lower() in {"1", "true", "yes", "on"}
 
 # Optional CC on every store intelligence report email. If unset, copies lekbiramine09@gmail.com.
 # Set to empty (STORE_REPORT_CC_EMAIL=) to disable; set to another address to override.
@@ -57,6 +64,8 @@ def validate_shopify_pipeline_env() -> None:
 def validate_email_env() -> None:
     required_email = {
         "EMAIL_SENDER": EMAIL_SENDER,
+        "EMAIL_FROM": EMAIL_FROM,
+        "SMTP_USERNAME": SMTP_USERNAME,
         "EMAIL_PASSWORD": EMAIL_PASSWORD,
         "EMAIL_RECIPIENT": EMAIL_RECIPIENT,
         "SMTP_HOST": SMTP_HOST,

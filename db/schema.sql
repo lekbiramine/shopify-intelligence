@@ -2,6 +2,7 @@
 CREATE TABLE IF NOT EXISTS stores (
     id BIGSERIAL PRIMARY KEY,
     shop_domain VARCHAR(255) UNIQUE NOT NULL,
+    display_name VARCHAR(255),
     access_token TEXT,
     refresh_token TEXT,
     access_token_expires_at TIMESTAMPTZ,
@@ -20,6 +21,9 @@ CREATE TABLE IF NOT EXISTS stores (
 -- Backfill / migration for older DBs
 ALTER TABLE stores
     ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255);
+
+ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
 
 ALTER TABLE stores
     ADD COLUMN IF NOT EXISTS last_report_sent_at TIMESTAMPTZ;

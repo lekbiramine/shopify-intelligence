@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-05-05T13:52:04.430302+00:00",
+  "generated_at": "2026-05-06T10:59:17.545591+00:00",
   "headline": {
-    "primary": "YOUR STORE IS LOSING $6849.96 TODAY",
-    "secondary": "$6849.96/day is currently being lost due to unresolved store issues"
+    "primary": "YOUR STORE IS LOSING $8081.47 TODAY",
+    "secondary": "$8081.47/day is currently being lost due to unresolved store issues"
   },
   "status": {
     "level": "CONFIRMED REVENUE LEAKS DETECTED",
@@ -14,8 +14,8 @@
   },
   "main_cause": "INVENTORY IMBALANCE",
   "inaction_risk": {
-    "weekly_loss": 47949.72,
-    "message": "If no action is taken, you will lose approximately $47949.72 in the next 7 days"
+    "weekly_loss": 56570.29,
+    "message": "If no action is taken, you will lose approximately $56570.29 in the next 7 days"
   },
   "execution_instruction": {
     "headline": "IMMEDIATE EXECUTION REQUIRED",
@@ -25,12 +25,12 @@
   "actions": [
     {
       "id": "action_1",
-      "title": "STOP DAILY CASH LOSS ($3498.12/DAY)",
+      "title": "STOP DAILY CASH LOSS ($4316.61/DAY)",
       "type": "inventory",
       "email_routing_type": "dead_inventory",
-      "value": 48973.65,
-      "daily_loss": 3498.12,
-      "weekly_loss_projection": 24486.84,
+      "value": 60432.6,
+      "daily_loss": 4316.61,
+      "weekly_loss_projection": 30216.27,
       "context": "3 SKUs have inventory >0 and zero sales in the last 90 days",
       "targets": [
         "Test Hat (SKU: HAT-OS) \u2014 inventory: 8 units \u2014 sales: 0 in last 90d",
@@ -61,12 +61,12 @@
         }
       ],
       "expected_outcome": {
-        "financial_recovery": 48973.65,
-        "message": "Recover up to $48973.65 by fixing this issue"
+        "financial_recovery": 60432.6,
+        "message": "Recover up to $60432.60 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 24486.84,
-        "message": "You will lose approximately $24486.84 in the next 7 days if no action is taken"
+        "weekly_loss": 30216.27,
+        "message": "You will lose approximately $30216.27 in the next 7 days if no action is taken"
       },
       "consequence": "Dead inventory is draining profit",
       "decision": "EXECUTE NOW / DELAY = LOSS",
@@ -74,24 +74,24 @@
       "priority_level": "primary",
       "previous_impact": {
         "same_type_last_day_loss": 3498.12,
-        "change": 0.0
+        "change": 818.49
       }
     },
     {
       "id": "action_2",
-      "title": "RECOVER LOST CUSTOMERS ($1551.91/DAY)",
+      "title": "RECOVER LOST CUSTOMERS ($1581.22/DAY)",
       "type": "operations",
       "email_routing_type": "high_value_customer_at_risk",
-      "value": 10863.36,
-      "daily_loss": 1551.91,
-      "weekly_loss_projection": 10863.37,
-      "context": "5 high-value customers are going quiet \u2014 last order 70 days ago on average",
+      "value": 11068.55,
+      "daily_loss": 1581.22,
+      "weekly_loss_projection": 11068.54,
+      "context": "5 high-value customers are going quiet \u2014 last order 67 days ago on average",
       "targets": [
-        "Jamie Patel \u2014 71 days since last order \u2014 LTV $2228.27",
-        "Taylor Hall \u2014 71 days since last order \u2014 LTV $2215.24",
-        "Riley Walker \u2014 71 days since last order \u2014 LTV $2184.76",
-        "Riley Miller \u2014 69 days since last order \u2014 LTV $2132.09",
-        "Avery Brown \u2014 69 days since last order \u2014 LTV $2103.00"
+        "Taylor Hall \u2014 67 days since last order \u2014 LTV $2294.47",
+        "Jamie Patel \u2014 68 days since last order \u2014 LTV $2246.80",
+        "Riley Miller \u2014 66 days since last order \u2014 LTV $2228.67",
+        "Riley Walker \u2014 68 days since last order \u2014 LTV $2195.61",
+        "Avery Brown \u2014 66 days since last order \u2014 LTV $2103.00"
       ],
       "execution": {
         "primary": "Send a personal email from the store owner account to each VIP customer with an exclusive offer",
@@ -116,12 +116,12 @@
         }
       ],
       "expected_outcome": {
-        "financial_recovery": 10863.36,
-        "message": "Recover up to $10863.36 by fixing this issue"
+        "financial_recovery": 11068.55,
+        "message": "Recover up to $11068.55 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 10863.37,
-        "message": "You will lose approximately $10863.37 in the next 7 days if no action is taken"
+        "weekly_loss": 11068.54,
+        "message": "You will lose approximately $11068.54 in the next 7 days if no action is taken"
       },
       "consequence": "Operational gaps are leaking cash",
       "decision": "EXECUTE NOW / DELAY = LOSS",
@@ -129,20 +129,20 @@
       "priority_level": "secondary",
       "previous_impact": {
         "same_type_last_day_loss": 2592.85,
-        "change": -1040.94
+        "change": -1011.63
       }
     },
     {
       "id": "action_3",
-      "title": "STOP CASH LEAK ($758.99/DAY)",
+      "title": "STOP CASH LEAK ($1121.03/DAY)",
       "type": "conversion",
       "email_routing_type": "abandoned_checkout_spike",
-      "value": 5312.9,
-      "daily_loss": 758.99,
-      "weekly_loss_projection": 5312.93,
-      "context": "59 checkouts abandoned this week \u2014 $5312.90 left at the door",
+      "value": 7847.21,
+      "daily_loss": 1121.03,
+      "weekly_loss_projection": 7847.21,
+      "context": "88 checkouts abandoned this week \u2014 $7847.21 left at the door",
       "targets": [
-        "59 checkouts abandoned this week \u2014 $5312.90 left at the door"
+        "88 checkouts abandoned this week \u2014 $7847.21 left at the door"
       ],
       "execution": {
         "primary": "Send a 2-email abandoned cart sequence: immediate recovery email at 1 hour, discount offer at 24 hours",
@@ -173,36 +173,36 @@
         }
       ],
       "expected_outcome": {
-        "financial_recovery": 5312.9,
-        "message": "Recover up to $5312.90 by fixing this issue"
+        "financial_recovery": 7847.21,
+        "message": "Recover up to $7847.21 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 5312.93,
-        "message": "You will lose approximately $5312.93 in the next 7 days if no action is taken"
+        "weekly_loss": 7847.21,
+        "message": "You will lose approximately $7847.21 in the next 7 days if no action is taken"
       },
       "consequence": "Checkout friction is blocking revenue capture",
       "decision": "EXECUTE NOW / DELAY = LOSS",
       "hierarchy_label": "ADDITIONAL LEAK \u2014 CONTAIN FINANCIAL RISK",
       "priority_level": "additional",
       "previous_impact": {
-        "same_type_last_day_loss": 908.89,
-        "change": -149.9
+        "same_type_last_day_loss": 758.99,
+        "change": 362.04
       }
     },
     {
       "id": "action_4",
-      "title": "RECOVER LOST CUSTOMERS ($634.79/DAY)",
+      "title": "RECOVER LOST CUSTOMERS ($648.75/DAY)",
       "type": "operations",
       "email_routing_type": "revenue_concentration",
-      "value": 4443.51,
-      "daily_loss": 634.79,
-      "weekly_loss_projection": 4443.53,
-      "context": "Top 2 customers represent 29.8% of loyal revenue",
+      "value": 4541.27,
+      "daily_loss": 648.75,
+      "weekly_loss_projection": 4541.25,
+      "context": "Top 2 customers represent 30.4% of loyal revenue",
       "targets": [
-        "Jamie Patel \u2014 spend $2,228.27 \u2014 20 orders",
-        "Taylor Hall \u2014 spend $2,215.24 \u2014 20 orders",
-        "Riley Walker \u2014 spend $2,184.76 \u2014 20 orders",
-        "Riley Miller \u2014 spend $2,132.09 \u2014 20 orders"
+        "Taylor Hall \u2014 spend $2,294.47 \u2014 20 orders",
+        "Jamie Patel \u2014 spend $2,246.80 \u2014 20 orders",
+        "Riley Miller \u2014 spend $2,228.67 \u2014 20 orders",
+        "Riley Walker \u2014 spend $2,195.61 \u2014 20 orders"
       ],
       "execution": {
         "primary": "Send a repeat-order offer to loyal customers outside your current top 2 buyers",
@@ -227,12 +227,12 @@
         }
       ],
       "expected_outcome": {
-        "financial_recovery": 4443.51,
-        "message": "Recover up to $4443.51 by fixing this issue"
+        "financial_recovery": 4541.27,
+        "message": "Recover up to $4541.27 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 4443.53,
-        "message": "You will lose approximately $4443.53 in the next 7 days if no action is taken"
+        "weekly_loss": 4541.25,
+        "message": "You will lose approximately $4541.25 in the next 7 days if no action is taken"
       },
       "consequence": "Operational gaps are leaking cash",
       "decision": "EXECUTE NOW / DELAY = LOSS",
@@ -240,20 +240,20 @@
       "priority_level": "additional",
       "previous_impact": {
         "same_type_last_day_loss": 2592.85,
-        "change": -1958.06
+        "change": -1944.1
       }
     },
     {
       "id": "action_5",
-      "title": "STOP CASH LEAK ($406.15/DAY)",
+      "title": "STOP CASH LEAK ($413.86/DAY)",
       "type": "operations",
       "email_routing_type": "low_margin_products",
-      "value": 2843.05,
-      "daily_loss": 406.15,
-      "weekly_loss_projection": 2843.05,
+      "value": 2897.03,
+      "daily_loss": 413.86,
+      "weekly_loss_projection": 2897.02,
       "context": "Test Shirt sells well but at a price that be compressing your margins",
       "targets": [
-        "Test Shirt \u2014 SKU SHIRT-S \u2014 price $29.99 \u2014 units sold 90d 158"
+        "Test Shirt \u2014 SKU SHIRT-S \u2014 price $29.99 \u2014 units sold 90d 161"
       ],
       "execution": {
         "primary": "Test a 15% price increase on this product and monitor conversion rate for 14 days",
@@ -278,12 +278,12 @@
         }
       ],
       "expected_outcome": {
-        "financial_recovery": 2843.05,
-        "message": "Recover up to $2843.05 by fixing this issue"
+        "financial_recovery": 2897.03,
+        "message": "Recover up to $2897.03 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 2843.05,
-        "message": "You will lose approximately $2843.05 in the next 7 days if no action is taken"
+        "weekly_loss": 2897.02,
+        "message": "You will lose approximately $2897.02 in the next 7 days if no action is taken"
       },
       "consequence": "Operational gaps are leaking cash",
       "decision": "EXECUTE NOW / DELAY = LOSS",
@@ -291,7 +291,7 @@
       "priority_level": "additional",
       "previous_impact": {
         "same_type_last_day_loss": 2592.85,
-        "change": -2186.7
+        "change": -2178.99
       }
     }
   ],
@@ -301,24 +301,24 @@
     "roi_efficiency_score": 139.94
   },
   "risk": {
-    "weekly_loss_projection": 47949.72,
+    "weekly_loss_projection": 56570.29,
     "primary_driver": "ROOT CAUSE IDENTIFIED: INVENTORY IMBALANCE"
   },
   "execution_outcome_heading": "EXECUTION OUTCOME (PROJECTED IMPACT):",
   "final_warning": "Continued inaction will maintain the current loss rate.",
   "daily_delta": {
     "revenue_change": 0.0,
-    "loss_change": -1049.3,
-    "risk_change": -1049.3
+    "loss_change": 8620.57,
+    "risk_change": 8620.57
   },
-  "trend_state": "improving",
+  "trend_state": "worsening",
   "daily_insight": {
-    "message": "Store loss decreased by $1049.30 versus yesterday.",
-    "key_change": "Loss pressure improved today."
+    "message": "Store loss increased by $8620.57 versus yesterday.",
+    "key_change": "Loss exposure is rising and requires faster execution."
   },
   "daily_comparison": {
     "title": "DAILY CHANGE vs YESTERDAY",
-    "loss_change_line": "-$1049.30 change in loss",
+    "loss_change_line": "+$8620.57 change in loss",
     "revenue_change_line": "$0.00 change in revenue recovery",
     "continuity_memory": "Comparing today against previous day performance",
     "baseline_mode": false
@@ -327,19 +327,19 @@
   "report_contract": {
     "metadata": {
       "store_id": "1",
-      "generated_at": "2026-05-05T13:52:04.430302+00:00",
+      "generated_at": "2026-05-06T10:59:17.545591+00:00",
       "status": "critical"
     },
     "financials": {
-      "daily_impact": 6849.96,
-      "recoverable_7d": 72436.47,
-      "risk_7d": 47949.72,
+      "daily_impact": 8081.47,
+      "recoverable_7d": 86786.66,
+      "risk_7d": 56570.29,
       "root_cause": "INVENTORY IMBALANCE"
     },
     "decision_block": {
-      "execute_value": 72436.47,
-      "ignore_value": 47949.72,
-      "net_delta": 24486.75,
+      "execute_value": 86786.66,
+      "ignore_value": 56570.29,
+      "net_delta": 30216.37,
       "decision_message": "Executing top actions converts current loss into recovery within 7 days.",
       "time_window_days": 7,
       "baseline_assumption": "current_performance_state",
@@ -348,14 +348,14 @@
     "actions": [
       {
         "id": "action_1",
-        "title": "STOP DAILY CASH LOSS ($3498.12/DAY)",
+        "title": "STOP DAILY CASH LOSS ($4316.61/DAY)",
         "priority": 1,
         "diagnosis": "3 SKUs have inventory >0 and zero sales in the last 90 days",
         "intervention": "Create automatic discount (15%) and bundle offer for listed SKUs",
         "expected_outcome": {
-          "daily_impact": 3498.12,
-          "weekly_value": 48973.65,
-          "risk_if_ignored": 24486.84,
+          "daily_impact": 4316.61,
+          "weekly_value": 60432.6,
+          "risk_if_ignored": 30216.27,
           "source_rule_id": "action_impact_rule_v1"
         },
         "targets": [
@@ -367,83 +367,83 @@
       },
       {
         "id": "action_2",
-        "title": "RECOVER LOST CUSTOMERS ($1551.91/DAY)",
+        "title": "RECOVER LOST CUSTOMERS ($1581.22/DAY)",
         "priority": 2,
-        "diagnosis": "5 high-value customers are going quiet \u2014 last order 70 days ago on average",
+        "diagnosis": "5 high-value customers are going quiet \u2014 last order 67 days ago on average",
         "intervention": "Send a personal email from the store owner account to each VIP customer with an exclusive offer",
         "expected_outcome": {
-          "daily_impact": 1551.91,
-          "weekly_value": 10863.36,
-          "risk_if_ignored": 10863.37,
+          "daily_impact": 1581.22,
+          "weekly_value": 11068.55,
+          "risk_if_ignored": 11068.54,
           "source_rule_id": "action_impact_rule_v1"
         },
         "targets": [
-          "Jamie Patel \u2014 71 days since last order \u2014 LTV $2228.27",
-          "Taylor Hall \u2014 71 days since last order \u2014 LTV $2215.24",
-          "Riley Walker \u2014 71 days since last order \u2014 LTV $2184.76",
-          "Riley Miller \u2014 69 days since last order \u2014 LTV $2132.09",
-          "Avery Brown \u2014 69 days since last order \u2014 LTV $2103.00"
+          "Taylor Hall \u2014 67 days since last order \u2014 LTV $2294.47",
+          "Jamie Patel \u2014 68 days since last order \u2014 LTV $2246.80",
+          "Riley Miller \u2014 66 days since last order \u2014 LTV $2228.67",
+          "Riley Walker \u2014 68 days since last order \u2014 LTV $2195.61",
+          "Avery Brown \u2014 66 days since last order \u2014 LTV $2103.00"
         ],
         "state": "pending"
       },
       {
         "id": "action_3",
-        "title": "STOP CASH LEAK ($758.99/DAY)",
+        "title": "STOP CASH LEAK ($1121.03/DAY)",
         "priority": 3,
-        "diagnosis": "59 checkouts abandoned this week \u2014 $5312.90 left at the door",
+        "diagnosis": "88 checkouts abandoned this week \u2014 $7847.21 left at the door",
         "intervention": "Send a 2-email abandoned cart sequence: immediate recovery email at 1 hour, discount offer at 24 hours",
         "expected_outcome": {
-          "daily_impact": 758.99,
-          "weekly_value": 5312.9,
-          "risk_if_ignored": 5312.93,
+          "daily_impact": 1121.03,
+          "weekly_value": 7847.21,
+          "risk_if_ignored": 7847.21,
           "source_rule_id": "action_impact_rule_v1"
         },
         "targets": [
-          "59 checkouts abandoned this week \u2014 $5312.90 left at the door"
+          "88 checkouts abandoned this week \u2014 $7847.21 left at the door"
         ],
         "state": "pending"
       },
       {
         "id": "action_4",
-        "title": "RECOVER LOST CUSTOMERS ($634.79/DAY)",
+        "title": "RECOVER LOST CUSTOMERS ($648.75/DAY)",
         "priority": 4,
-        "diagnosis": "Top 2 customers represent 29.8% of loyal revenue",
+        "diagnosis": "Top 2 customers represent 30.4% of loyal revenue",
         "intervention": "Send a repeat-order offer to loyal customers outside your current top 2 buyers",
         "expected_outcome": {
-          "daily_impact": 634.79,
-          "weekly_value": 4443.51,
-          "risk_if_ignored": 4443.53,
+          "daily_impact": 648.75,
+          "weekly_value": 4541.27,
+          "risk_if_ignored": 4541.25,
           "source_rule_id": "action_impact_rule_v1"
         },
         "targets": [
-          "Jamie Patel \u2014 spend $2,228.27 \u2014 20 orders",
-          "Taylor Hall \u2014 spend $2,215.24 \u2014 20 orders",
-          "Riley Walker \u2014 spend $2,184.76 \u2014 20 orders",
-          "Riley Miller \u2014 spend $2,132.09 \u2014 20 orders"
+          "Taylor Hall \u2014 spend $2,294.47 \u2014 20 orders",
+          "Jamie Patel \u2014 spend $2,246.80 \u2014 20 orders",
+          "Riley Miller \u2014 spend $2,228.67 \u2014 20 orders",
+          "Riley Walker \u2014 spend $2,195.61 \u2014 20 orders"
         ],
         "state": "pending"
       },
       {
         "id": "action_5",
-        "title": "STOP CASH LEAK ($406.15/DAY)",
+        "title": "STOP CASH LEAK ($413.86/DAY)",
         "priority": 5,
         "diagnosis": "Test Shirt sells well but at a price that be compressing your margins",
         "intervention": "Test a 15% price increase on this product and monitor conversion rate for 14 days",
         "expected_outcome": {
-          "daily_impact": 406.15,
-          "weekly_value": 2843.05,
-          "risk_if_ignored": 2843.05,
+          "daily_impact": 413.86,
+          "weekly_value": 2897.03,
+          "risk_if_ignored": 2897.02,
           "source_rule_id": "action_impact_rule_v1"
         },
         "targets": [
-          "Test Shirt \u2014 SKU SHIRT-S \u2014 price $29.99 \u2014 units sold 90d 158"
+          "Test Shirt \u2014 SKU SHIRT-S \u2014 price $29.99 \u2014 units sold 90d 161"
         ],
         "state": "pending"
       }
     ],
     "impact_summary": {
       "if_execute": "Recovered 179.92; Protected 99.96",
-      "if_ignore": "Projected 7-day loss 47949.72"
+      "if_ignore": "Projected 7-day loss 56570.29"
     },
     "_traceability": {
       "numeric_paths": [
@@ -537,7 +537,7 @@
   "data_quality": {
     "missing_target_actions": 0,
     "high_return_products_detected": 1,
-    "out_of_stock_variants_detected": 23
+    "out_of_stock_variants_detected": 22
   },
   "action_states": {
     "action_1": {
@@ -548,9 +548,9 @@
       "executed_at": null,
       "snoozed_until": "2026-05-02T09:54:34.675345+00:00",
       "ignored_at": null,
-      "impact_realized_24h": 38.49,
+      "impact_realized_24h": 53.84,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-05T13:52:04.430134+00:00"
+      "last_verification_at": "2026-05-06T10:59:17.545285+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -560,9 +560,9 @@
       "executed_at": null,
       "snoozed_until": null,
       "ignored_at": null,
-      "impact_realized_24h": 38.49,
+      "impact_realized_24h": 53.84,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-05T13:52:04.128600+00:00"
+      "last_verification_at": "2026-05-06T10:59:17.241444+00:00"
     },
     "action_3": {
       "action_id": "action_3",
@@ -654,15 +654,15 @@
       "action_id": "action_2",
       "window": "24h",
       "predicted_recovered_7d": 20.0,
-      "actual_recovered_7d": 269.46,
-      "delta": 249.46
+      "actual_recovered_7d": 376.9,
+      "delta": 356.9
     },
     {
       "action_id": "action_1",
       "window": "24h",
       "predicted_recovered_7d": 159.92,
-      "actual_recovered_7d": 269.46,
-      "delta": 109.54
+      "actual_recovered_7d": 376.9,
+      "delta": 216.98
     }
   ]
 }

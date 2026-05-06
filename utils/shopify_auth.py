@@ -46,6 +46,23 @@ def validate_access_token(shop_domain: str, access_token: str) -> tuple[bool, st
     return True, "Token is valid."
 
 
+def fetch_shop_display_name(shop_domain: str, access_token: str) -> str | None:
+    """
+    Fetches the merchant-facing store name from Shopify's shop metadata.
+    """
+    headers = {
+        "X-Shopify-Access-Token": (access_token or "").strip(),
+        "Content-Type": "application/json",
+    }
+    resp = requests.get(_shopify_url(shop_domain, "shop.json"), headers=headers, timeout=20)
+    if resp.status_code >= 400:
+        return None
+    payload = resp.json() or {}
+    shop = payload.get("shop") or {}
+    name = str(shop.get("name") or "").strip()
+    return name or None
+
+
 def fetch_access_scopes(shop_domain: str, access_token: str) -> list[str]:
     """
     Returns granted scopes for the token.

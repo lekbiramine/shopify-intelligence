@@ -22,12 +22,14 @@ def upsert_store_connection(
     access_token_expires_at=None,
     scope: str | None = None,
     contact_email: str | None = None,
+    display_name: str | None = None,
     referral_code_used: str | None = None,
     referral_code_id: int | None = None,
 ) -> None:
     sql = """
         INSERT INTO stores (
             shop_domain,
+            display_name,
             access_token,
             refresh_token,
             access_token_expires_at,
@@ -39,8 +41,9 @@ def upsert_store_connection(
             connected_at,
             updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
         ON CONFLICT (shop_domain) DO UPDATE SET
+            display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), stores.display_name),
             access_token = EXCLUDED.access_token,
             refresh_token = COALESCE(EXCLUDED.refresh_token, stores.refresh_token),
             access_token_expires_at = COALESCE(EXCLUDED.access_token_expires_at, stores.access_token_expires_at),
@@ -57,6 +60,7 @@ def upsert_store_connection(
             sql,
             (
                 shop_domain,
+                display_name,
                 access_token,
                 refresh_token,
                 access_token_expires_at,
@@ -409,9 +413,38 @@ def list_manual_reportable_stores() -> list[dict]:
           AND report_schedule_active = TRUE
           AND contact_email IS NOT NULL
           AND access_token IS NOT NULL
+          AND connected_at IS NOT NULL
+          -- Filter out legacy test/demo shops that should never be scheduled.
+          AND shop_domain NOT ILIKE 'live-%'
+          AND shop_domain NOT ILIKE '%test%'
         ORDER BY id ASC;
     """
     with get_cursor() as cursor:
+        cursor.execute(sql)
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
+
+
+def deactivate_likely_test_stores() -> list[dict]:
+    """
+    Hardens the DB against legacy demo/test shops being accidentally scheduled.
+
+    This does NOT delete rows (for auditability). It simply deactivates scheduling.
+    """
+    sql = """
+        UPDATE stores
+        SET report_schedule_active = FALSE,
+            is_active = FALSE,
+            updated_at = NOW()
+        WHERE is_active = TRUE
+          AND report_schedule_active = TRUE
+          AND (
+            shop_domain ILIKE 'live-%'
+            OR shop_domain ILIKE '%test%'
+          )
+        RETURNING id, shop_domain, contact_email;
+    """
+    with get_cursor(commit=True) as cursor:
         cursor.execute(sql)
         rows = cursor.fetchall() or []
         return [dict(r) for r in rows]
@@ -634,6 +667,81 @@ def get_store_contact_email_by_id(store_id: int) -> str | None:
         row = cursor.fetchone() or {}
         email = (row.get("contact_email") or "").strip()
         return email or None
+
+
+def update_store_display_name_by_id(*, store_id: int, display_name: str) -> None:
+    scoped_store_id = _require_store_id(store_id)
+    name = (display_name or "").strip()
+    if not name:
+        return
+    with get_cursor(commit=True) as cursor:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'stores'
+              AND column_name = 'display_name'
+            LIMIT 1;
+            """
+        )
+        if not cursor.fetchone():
+            return
+        cursor.execute(
+            """
+            UPDATE stores
+            SET display_name = %s,
+                updated_at = NOW()
+            WHERE id = %s;
+            """,
+            (name, scoped_store_id),
+        )
+
+
+def get_store_display_name_by_id(store_id: int) -> str | None:
+    """
+    Returns a human-meaningful store label for emails/reports.
+
+    Prefers stores.display_name when present; otherwise falls back to shop_domain.
+    """
+    scoped_store_id = _require_store_id(store_id)
+    with get_cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'stores'
+              AND column_name = 'display_name'
+            LIMIT 1;
+            """
+        )
+        has_display_name = bool(cursor.fetchone())
+
+        if has_display_name:
+            cursor.execute(
+                """
+                SELECT COALESCE(NULLIF(display_name, ''), shop_domain) AS display_name
+                FROM stores
+                WHERE id = %s
+                LIMIT 1;
+                """,
+                (scoped_store_id,),
+            )
+            row = cursor.fetchone() or {}
+            name = (row.get("display_name") or "").strip()
+            return name or None
+
+        cursor.execute(
+            """
+            SELECT shop_domain
+            FROM stores
+            WHERE id = %s
+            LIMIT 1;
+            """,
+            (scoped_store_id,),
+        )
+        row = cursor.fetchone() or {}
+        name = (row.get("shop_domain") or "").strip()
+        return name or None
 
 
 # ─── Tasks ──────────────────────────────────────────────────────────────────
