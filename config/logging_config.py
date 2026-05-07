@@ -6,8 +6,6 @@ LOG_DIR = Path("logs")
 APP_LOG = LOG_DIR / "app.log"
 ERROR_LOG = LOG_DIR / "errors.log"
 
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-
 _logging_initialized = False
 
 
@@ -21,6 +19,8 @@ def setup_logging():
         fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     # App handler — all levels
     app_handler = RotatingFileHandler(

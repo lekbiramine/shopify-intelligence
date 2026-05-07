@@ -14,19 +14,6 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from config.logging_config import get_logger
-from db.queries import (
-    attach_store_referral,
-    consume_oauth_state,
-    create_oauth_state,
-    enable_report_schedule_by_email,
-    get_active_referral_code_by_code,
-    get_store_by_domain,
-    disable_report_schedule_by_email,
-    set_store_referral_code,
-    upsert_store_connection,
-    upsert_store_contact_email,
-)
-from scheduler.run_pipeline import run_reporting_for_store
 from utils.shopify_auth import (
     fetch_access_scopes,
     normalize_shop_domain,
@@ -94,6 +81,8 @@ def _canonicalize_state(state: str) -> str:
 
 
 def _validate_state(state: str, expected_shop: str) -> bool:
+    from db.queries import consume_oauth_state
+
     canonical_state = _canonicalize_state(state)
     parts = canonical_state.split("|")
     if len(parts) != 4:
@@ -161,6 +150,8 @@ def install(
     email: str | None = Query(default=None, description="Optional report recipient"),
     ref: str | None = Query(default=None, description="Optional referral code"),
 ) -> RedirectResponse:
+    from db.queries import set_store_referral_code, upsert_store_contact_email
+
     _ensure_oauth_env()
     try:
         shop_domain = normalize_shop_domain(shop)
@@ -175,6 +166,8 @@ def install(
         set_store_referral_code(shop_domain, referral_code)
 
     state = _build_state(shop_domain)
+    from db.queries import create_oauth_state
+
     create_oauth_state(_state_hash(state), shop_domain, ttl_seconds=600)
     redirect_uri = f"{SHOPIFY_APP_BASE_URL.rstrip('/')}/oauth/callback"
     query = urlencode(
@@ -197,6 +190,14 @@ def oauth_callback(
     state: str = Query(...),
     email: str | None = Query(default=None),
 ) -> PlainTextResponse:
+    from db.queries import (
+        attach_store_referral,
+        get_active_referral_code_by_code,
+        get_store_by_domain,
+        upsert_store_connection,
+        upsert_store_contact_email,
+    )
+
     try:
         _ensure_oauth_env()
         shop_domain = normalize_shop_domain(shop)
@@ -301,6 +302,8 @@ def oauth_callback(
         store = get_store_by_domain(shop_domain)
         store_id = int((store or {}).get("id") or 0)
         if store_id > 0:
+            from scheduler.run_pipeline import run_reporting_for_store
+
             thread = threading.Thread(
                 target=lambda sid: run_reporting_for_store(store_id=sid),
                 args=(store_id,),
@@ -338,6 +341,8 @@ def unsubscribe(
     email: str = Query(..., description="Recipient email to unsubscribe"),
     action: str = Query(default="unsubscribe", description="unsubscribe or subscribe"),
 ) -> HTMLResponse:
+    from db.queries import disable_report_schedule_by_email, enable_report_schedule_by_email
+
     recipient = (email or "").strip()
     if not recipient:
         return HTMLResponse("<h1>Invalid unsubscribe link.</h1>", status_code=400)
