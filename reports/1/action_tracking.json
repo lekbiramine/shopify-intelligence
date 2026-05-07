@@ -36,27 +36,27 @@
   "action_states": {
     "action_1": {
       "action_id": "action_1",
-      "status": "snoozed",
+      "status": "verified",
       "created_at": "2026-05-01T09:54:34.448980+00:00",
       "updated_at": "2026-05-01T09:54:34.675319+00:00",
       "executed_at": null,
       "snoozed_until": "2026-05-02T09:54:34.675345+00:00",
       "ignored_at": null,
       "impact_realized_24h": 53.84,
-      "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-06T10:59:17.545285+00:00"
+      "impact_realized_7d": 376.9,
+      "last_verification_at": "2026-05-07T17:18:00.062539+00:00"
     },
     "action_2": {
       "action_id": "action_2",
-      "status": "not_executed",
+      "status": "verified",
       "created_at": "2026-05-01T09:54:34.449003+00:00",
       "updated_at": "2026-05-01T09:54:34.449003+00:00",
       "executed_at": null,
       "snoozed_until": null,
       "ignored_at": null,
       "impact_realized_24h": 53.84,
-      "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-06T10:59:17.241444+00:00"
+      "impact_realized_7d": 376.9,
+      "last_verification_at": "2026-05-07T17:17:59.681540+00:00"
     },
     "action_3": {
       "action_id": "action_3",
@@ -158,18 +158,31 @@
   "verification_history": [
     {
       "action_id": "action_2",
-      "window": "24h",
+      "window": "7d",
       "predicted_recovered_7d": 20.0,
       "actual_recovered_7d": 376.9,
       "delta": 356.9
     },
     {
       "action_id": "action_1",
-      "window": "24h",
+      "window": "7d",
       "predicted_recovered_7d": 159.92,
       "actual_recovered_7d": 376.9,
       "delta": 216.98
     }
   ],
-  "score_feedback": {}
+  "score_feedback": {
+    "operations:high-value customers at risk": {
+      "multiplier": 0.8994,
+      "last_realized_7d": 376.9,
+      "last_expected_7d": 11068.55,
+      "updated_at": "2026-05-07T17:17:59.681580+00:00"
+    },
+    "inventory:clear dead inventory via discount and bundling": {
+      "multiplier": 0.8933,
+      "last_realized_7d": 376.9,
+      "last_expected_7d": 60432.6,
+      "updated_at": "2026-05-07T17:18:00.062572+00:00"
+    }
+  }
 }

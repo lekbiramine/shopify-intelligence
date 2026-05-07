@@ -15,8 +15,8 @@ logger = get_logger(__name__)
 def build_email(
     subject: str,
     body: str,
+    recipient: str,
     html_body: str | None = None,
-    recipient: str | None = None,
     cc: str | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
@@ -25,7 +25,7 @@ def build_email(
     # If EMAIL_FROM already includes a name, we still normalize it to "Perspicor".
     _, addr = parseaddr(settings.EMAIL_FROM or "")
     msg["From"] = formataddr(("Perspicor", addr or (settings.EMAIL_FROM or "")))
-    msg["To"] = recipient or settings.EMAIL_RECIPIENT
+    msg["To"] = recipient
     if cc:
         msg["Cc"] = cc
     msg.set_content(body)
@@ -37,8 +37,8 @@ def build_email(
 def send_email(
     subject: str,
     body: str,
+    recipient: str,
     html_body: str | None = None,
-    recipient: str | None = None,
     cc: str | None = None,
 ) -> None:
     """
@@ -47,7 +47,9 @@ def send_email(
     - Port 465 typically uses implicit TLS (`SMTP_SSL`)
     - Port 587 typically uses STARTTLS (`SMTP` + `starttls()`)
     """
-    to_addr = recipient or settings.EMAIL_RECIPIENT
+    to_addr = (recipient or "").strip()
+    if not to_addr:
+        raise EnvironmentError("No recipient provided.")
     if cc:
         logger.info(f"Sending email to {to_addr} (Cc: {cc})...")
     else:

@@ -33,7 +33,6 @@ The current deployment model uses a private Shopify app install flow (OAuth) for
   - `SMTP_USERNAME`, `EMAIL_PASSWORD`
   - `EMAIL_FROM` (displayed From header; can differ from SMTP login)
   - `EMAIL_SENDER` (legacy; still supported, used as fallback)
-  - `EMAIL_RECIPIENT`
 
 ## Setup
 

@@ -22,7 +22,6 @@ EMAIL_FROM = (os.getenv("EMAIL_FROM") or "").strip() or EMAIL_SENDER
 # SMTP username/login (Gmail address). Defaults to EMAIL_SENDER.
 SMTP_USERNAME = (os.getenv("SMTP_USERNAME") or "").strip() or EMAIL_SENDER
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-EMAIL_RECIPIENT = os.getenv("EMAIL_RECIPIENT")
 SMTP_HOST = os.getenv("SMTP_HOST")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USE_SSL = (os.getenv("SMTP_USE_SSL") or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -67,7 +66,6 @@ def validate_email_env() -> None:
         "EMAIL_FROM": EMAIL_FROM,
         "SMTP_USERNAME": SMTP_USERNAME,
         "EMAIL_PASSWORD": EMAIL_PASSWORD,
-        "EMAIL_RECIPIENT": EMAIL_RECIPIENT,
         "SMTP_HOST": SMTP_HOST,
     }
     missing_email = [key for key, value in required_email.items() if not value]

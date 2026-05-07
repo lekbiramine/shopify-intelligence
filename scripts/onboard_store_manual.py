@@ -37,7 +37,7 @@ def main() -> None:
 
     shop_domain_raw = (args.shop_domain or "").strip() or env_value("CLIENT_SHOP_DOMAIN", "SHOPIFY_STORE_URL")
     access_token = (args.access_token or "").strip() or env_value("CLIENT_ACCESS_TOKEN", "SHOPIFY_ACCESS_TOKEN")
-    contact_email = (args.contact_email or "").strip() or env_value("CLIENT_CONTACT_EMAIL", "EMAIL_RECIPIENT")
+    contact_email = (args.contact_email or "").strip() or env_value("CLIENT_CONTACT_EMAIL")
 
     if not shop_domain_raw:
         raise ValueError("shop-domain is required (or set CLIENT_SHOP_DOMAIN in env file)")
