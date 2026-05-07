@@ -47,6 +47,7 @@ class ScopedCursor:
 def _get_pool() -> ThreadedConnectionPool:
     global _POOL
     if _POOL is None:
+        settings.validate_db_env()
         _POOL = ThreadedConnectionPool(
             minconn=1,
             maxconn=10,

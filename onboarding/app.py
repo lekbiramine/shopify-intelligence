@@ -328,6 +328,11 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.get("/unsubscribe")
 def unsubscribe(
     email: str = Query(..., description="Recipient email to unsubscribe"),

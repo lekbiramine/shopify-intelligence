@@ -35,17 +35,16 @@ if _raw_store_report_cc is None:
 else:
     STORE_REPORT_CC_EMAIL = _raw_store_report_cc.strip() or None
 
-# Validation
-required = {
-    "DB_HOST": DB_HOST,
-    "DB_NAME": DB_NAME,
-    "DB_USER": DB_USER,
-    "DB_PASSWORD": DB_PASSWORD,
-}
-
-missing = [key for key, value in required.items() if not value]
-if missing:
-    raise EnvironmentError(f"Missing required environment variables: {missing}")
+def validate_db_env() -> None:
+    required = {
+        "DB_HOST": DB_HOST,
+        "DB_NAME": DB_NAME,
+        "DB_USER": DB_USER,
+        "DB_PASSWORD": DB_PASSWORD,
+    }
+    missing = [key for key, value in required.items() if not value]
+    if missing:
+        raise EnvironmentError(f"Missing required database environment variables: {missing}")
 
 
 def validate_shopify_pipeline_env() -> None:
