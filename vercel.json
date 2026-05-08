@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/install",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/oauth/install",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/oauth/callback",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/healthz",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/unsubscribe",
+      "destination": "/api/index"
+    }
+  ]
+}
