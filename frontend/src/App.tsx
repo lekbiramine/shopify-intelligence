@@ -597,8 +597,10 @@ function SuccessPage() {
     <div className="success-shell">
       <SiteHeader />
       <main className="success-main">
-        <h1 className="success-title">You&apos;re in. Your report is on its way.</h1>
-        <p className="success-sub">We&apos;re scanning your store right now. Your first Perspicor report will land in your inbox in the next few minutes. Close this tab and go run your store.</p>
+        <h1 className="success-title">Your store is connected!</h1>
+        <p className="success-sub">
+          Data is being synced now. Your first Perspicor diagnosis will arrive in your inbox shortly.
+        </p>
       </main>
     </div>
   )

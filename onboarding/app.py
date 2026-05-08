@@ -118,6 +118,15 @@ def _normalize_referral_code(ref: str | None) -> str | None:
     return value or None
 
 
+def _frontend_hash_route(route: str) -> str:
+    """
+    Build a frontend hash-route URL so static hosting without rewrite rules
+    can still resolve deep links like /success.
+    """
+    normalized_route = "/" + (route or "").strip().lstrip("/")
+    return f"{FRONTEND_URL.rstrip('/')}/#{normalized_route}"
+
+
 def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
     pairs = parse_qsl(raw_query, keep_blank_values=True, strict_parsing=False)
     hmac_received = ""
@@ -315,7 +324,7 @@ def oauth_callback(
             attach_store_referral(shop_domain, referral_code_id, referral_code_used)
 
         logger.info("Private app install completed for %s", shop_domain)
-        return RedirectResponse(url=f"{FRONTEND_URL.rstrip('/')}/success", status_code=302)
+        return RedirectResponse(url=_frontend_hash_route("/success"), status_code=302)
 
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)
