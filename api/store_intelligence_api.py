@@ -4,12 +4,14 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from analytics.summary import build_summary
 from config import constants as app_constants
+from db.connection import DatabaseConnectionError, DatabaseQueryError
 from reporting.pdf_report_v2 import build_structured_actions
 
 app = FastAPI(title="Store Intelligence API")
@@ -20,6 +22,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(DatabaseConnectionError)
+def handle_db_connection_error(_: Request, __: DatabaseConnectionError):
+    return JSONResponse(status_code=503, content={"detail": "Database is temporarily unavailable"})
+
+
+@app.exception_handler(DatabaseQueryError)
+def handle_db_query_error(_: Request, __: DatabaseQueryError):
+    return JSONResponse(status_code=500, content={"detail": "Database operation failed"})
 
 
 class CompleteActionRequest(BaseModel):

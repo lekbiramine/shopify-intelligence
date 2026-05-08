@@ -1,4 +1,4 @@
-from db.connection import get_connection
+from db.connection import get_connection, return_connection
 from config.logging_config import setup_logging, get_logger
 
 setup_logging()
@@ -91,7 +91,7 @@ def seed_data() -> None:
         logger.error(f"Failed to seed data: {e}")
         raise
     finally:
-        conn.close()
+        return_connection(conn)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,9 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_SSLMODE = os.getenv("DB_SSLMODE", "require").strip().lower()
+DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
+DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "5"))
 
 # Email
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
@@ -45,6 +48,12 @@ def validate_db_env() -> None:
     missing = [key for key, value in required.items() if not value]
     if missing:
         raise EnvironmentError(f"Missing required database environment variables: {missing}")
+    if DB_SSLMODE not in {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}:
+        raise EnvironmentError(f"Invalid DB_SSLMODE: {DB_SSLMODE}")
+    if DB_POOL_MIN < 1 or DB_POOL_MAX < DB_POOL_MIN:
+        raise EnvironmentError(
+            f"Invalid DB pool sizing (DB_POOL_MIN={DB_POOL_MIN}, DB_POOL_MAX={DB_POOL_MAX})"
+        )
 
 
 def validate_shopify_pipeline_env() -> None:

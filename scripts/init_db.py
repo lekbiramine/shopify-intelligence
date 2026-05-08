@@ -6,7 +6,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from db.connection import get_connection
+from db.connection import get_connection, return_connection
 from config.logging_config import get_logger, setup_logging
 
 setup_logging()
@@ -25,7 +25,7 @@ def init_db() -> None:
         conn.autocommit = True
         with conn.cursor() as cursor:
             cursor.execute(sql)
-        conn.close()
+        return_connection(conn)
         logger.info("Database schema created successfully.")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")

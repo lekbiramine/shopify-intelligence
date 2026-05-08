@@ -1,4 +1,4 @@
-from db.connection import get_connection, get_cursor
+from db.connection import get_connection, get_cursor, return_connection
 
 
 def test_connection():
@@ -6,7 +6,7 @@ def test_connection():
     conn = get_connection()
     assert conn is not None
     assert conn.closed == 0
-    conn.close()
+    return_connection(conn)
 
 
 def test_get_cursor():

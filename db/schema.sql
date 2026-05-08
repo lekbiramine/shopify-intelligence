@@ -108,17 +108,6 @@ WHERE store_id IS NULL;
 ALTER TABLE products
     ALTER COLUMN store_id SET NOT NULL;
 
--- Drop legacy FKs that depended on products(id) PK, before replacing PK
-ALTER TABLE variants
-    DROP CONSTRAINT IF EXISTS variants_product_id_fkey;
-ALTER TABLE variants
-    DROP CONSTRAINT IF EXISTS variants_product_fk;
-
-ALTER TABLE order_items
-    DROP CONSTRAINT IF EXISTS order_items_product_id_fkey;
-ALTER TABLE order_items
-    DROP CONSTRAINT IF EXISTS order_items_product_fk;
-
 ALTER TABLE products
     DROP CONSTRAINT IF EXISTS products_pkey;
 
@@ -147,17 +136,6 @@ WHERE store_id IS NULL;
 
 ALTER TABLE variants
     ALTER COLUMN store_id SET NOT NULL;
-
--- Drop legacy FKs that depended on variants(id) PK, before replacing PK
-ALTER TABLE order_items
-    DROP CONSTRAINT IF EXISTS order_items_variant_id_fkey;
-ALTER TABLE order_items
-    DROP CONSTRAINT IF EXISTS order_items_variant_fk;
-
-ALTER TABLE inventory
-    DROP CONSTRAINT IF EXISTS inventory_variant_id_fkey;
-ALTER TABLE inventory
-    DROP CONSTRAINT IF EXISTS inventory_variant_fk;
 
 ALTER TABLE variants
     DROP CONSTRAINT IF EXISTS variants_pkey;
@@ -193,12 +171,6 @@ WHERE store_id IS NULL;
 ALTER TABLE customers
     ALTER COLUMN store_id SET NOT NULL;
 
--- Drop legacy FK that depended on customers(id) PK, before replacing PK
-ALTER TABLE orders
-    DROP CONSTRAINT IF EXISTS orders_customer_id_fkey;
-ALTER TABLE orders
-    DROP CONSTRAINT IF EXISTS orders_customer_fk;
-
 ALTER TABLE customers
     DROP CONSTRAINT IF EXISTS customers_pkey;
 
@@ -230,12 +202,6 @@ WHERE store_id IS NULL;
 
 ALTER TABLE orders
     ALTER COLUMN store_id SET NOT NULL;
-
--- Drop legacy FK that depended on orders(id) PK, before replacing PK
-ALTER TABLE order_items
-    DROP CONSTRAINT IF EXISTS order_items_order_id_fkey;
-ALTER TABLE order_items
-    DROP CONSTRAINT IF EXISTS order_items_order_fk;
 
 ALTER TABLE orders
     DROP CONSTRAINT IF EXISTS orders_pkey;

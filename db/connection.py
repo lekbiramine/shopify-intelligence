@@ -13,6 +13,14 @@ _TENANT_TABLES = {"orders", "products", "customers", "inventory", "reports", "ta
 _DDL_PREFIXES = ("create ", "alter ", "drop ", "truncate ")
 
 
+class DatabaseConnectionError(RuntimeError):
+    """Raised when acquiring a DB connection fails."""
+
+
+class DatabaseQueryError(RuntimeError):
+    """Raised when executing a DB query fails."""
+
+
 def _normalize_sql(sql: str) -> str:
     return re.sub(r"\s+", " ", (sql or "").strip().lower())
 
@@ -49,15 +57,28 @@ def _get_pool() -> ThreadedConnectionPool:
     if _POOL is None:
         settings.validate_db_env()
         _POOL = ThreadedConnectionPool(
-            minconn=1,
-            maxconn=10,
+            minconn=settings.DB_POOL_MIN,
+            maxconn=settings.DB_POOL_MAX,
             host=settings.DB_HOST,
             port=settings.DB_PORT,
             dbname=settings.DB_NAME,
             user=settings.DB_USER,
             password=settings.DB_PASSWORD,
+            sslmode=settings.DB_SSLMODE,
+            connect_timeout=10,
+            application_name="perspicor",
         )
-        logger.info("Database connection pool initialized.")
+        logger.info(
+            "Database connection pool initialized.",
+            extra={
+                "db_host": settings.DB_HOST,
+                "db_port": settings.DB_PORT,
+                "db_name": settings.DB_NAME,
+                "db_sslmode": settings.DB_SSLMODE,
+                "db_pool_min": settings.DB_POOL_MIN,
+                "db_pool_max": settings.DB_POOL_MAX,
+            },
+        )
     return _POOL
 
 
@@ -68,8 +89,23 @@ def get_connection():
         logger.debug("Database connection established.")
         return conn
     except psycopg2.OperationalError as e:
-        logger.error(f"Failed to connect to database: {e}")
-        raise
+        logger.exception("Failed to connect to database.")
+        raise DatabaseConnectionError("Database connection failed.") from e
+
+
+def return_connection(conn, *, close: bool = False) -> None:
+    if conn is None:
+        return
+    try:
+        pool = _get_pool()
+        pool.putconn(conn, close=close)
+        logger.debug("Database connection returned to pool.")
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        logger.debug("Database connection closed.")
 
 
 @contextmanager
@@ -82,13 +118,7 @@ def get_cursor(commit: bool = False):
                 conn.commit()
     except Exception as e:
         conn.rollback()
-        logger.error(f"Database error: {e}")
-        raise
+        logger.exception("Database query failed.")
+        raise DatabaseQueryError("Database operation failed.") from e
     finally:
-        try:
-            pool = _get_pool()
-            pool.putconn(conn)
-            logger.debug("Database connection returned to pool.")
-        except Exception:
-            conn.close()
-            logger.debug("Database connection closed.")
+        return_connection(conn)
