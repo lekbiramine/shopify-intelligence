@@ -1,5 +1,11 @@
 {
   "version": 2,
+  "crons": [
+    {
+      "path": "/api/cron/run-pipeline",
+      "schedule": "0 0 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/install",
@@ -23,6 +29,10 @@
     },
     {
       "source": "/unsubscribe",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/api/cron/run-pipeline",
       "destination": "/api/index"
     }
   ]

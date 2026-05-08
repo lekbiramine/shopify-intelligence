@@ -1,0 +1,117 @@
+{
+  "generated_at": "2026-05-08T11:18:46.691486+00:00",
+  "headline": {
+    "primary": "NO ACTIVE STORE LOSS DETECTED TODAY",
+    "secondary": "$0.00/day is currently being lost due to unresolved store issues"
+  },
+  "status": {
+    "level": "STABLE",
+    "message": "No active revenue leaks detected right now"
+  },
+  "execution_required": {
+    "title": "EXECUTION REQUIRED",
+    "message": "Failure to act results in compounding daily revenue loss"
+  },
+  "main_cause": "OPERATIONAL REVENUE LEAK",
+  "inaction_risk": {
+    "weekly_loss": 0.0,
+    "message": "If no action is taken, you will lose approximately $0.00 in the next 7 days"
+  },
+  "execution_instruction": {
+    "headline": "IMMEDIATE EXECUTION REQUIRED",
+    "line_1": "Start with ACTION #1",
+    "line_2": "Do NOT delay ACTION #2"
+  },
+  "actions": [],
+  "system_impact": {
+    "total_revenue_recovered_7d": 0,
+    "total_loss_prevented_7d": 0,
+    "roi_efficiency_score": 0.0
+  },
+  "risk": {
+    "weekly_loss_projection": 0.0,
+    "primary_driver": "ROOT CAUSE IDENTIFIED: OPERATIONAL REVENUE LEAK"
+  },
+  "execution_outcome_heading": "EXECUTION OUTCOME (PROJECTED IMPACT):",
+  "final_warning": "Continued inaction will maintain the current loss rate.",
+  "daily_delta": {
+    "revenue_change": 0.0,
+    "loss_change": 0.0,
+    "risk_change": 0.0
+  },
+  "trend_state": "baseline (first tracking day)",
+  "daily_insight": {
+    "message": "Baseline established. Future reports will track performance changes.",
+    "key_change": "Baseline established. Future reports will track performance changes."
+  },
+  "daily_comparison": {
+    "title": "First tracking day \u2014 baseline established",
+    "loss_change_line": "",
+    "revenue_change_line": "",
+    "continuity_memory": "First tracking day \u2014 baseline established",
+    "baseline_mode": true
+  },
+  "continuity_memory": "First tracking day \u2014 baseline established",
+  "report_contract": {
+    "metadata": {
+      "store_id": "12",
+      "generated_at": "2026-05-08T11:18:46.691486+00:00",
+      "status": "healthy"
+    },
+    "financials": {
+      "daily_impact": 0,
+      "recoverable_7d": 0,
+      "risk_7d": 0.0,
+      "root_cause": "OPERATIONAL REVENUE LEAK"
+    },
+    "decision_block": {
+      "execute_value": 0,
+      "ignore_value": 0.0,
+      "net_delta": 0.0,
+      "decision_message": "Executing top actions converts current loss into recovery within 7 days.",
+      "time_window_days": 7,
+      "baseline_assumption": "current_performance_state",
+      "calculation_logic_source": "inventory_return_stagnation_v1"
+    },
+    "actions": [],
+    "impact_summary": {
+      "if_execute": "Recovered 0.00; Protected 0.00",
+      "if_ignore": "Projected 7-day loss 0.00"
+    },
+    "_traceability": {
+      "numeric_paths": [
+        {
+          "path": "financials.daily_impact",
+          "source_rule_id": "inventory_loss_rule_v1"
+        },
+        {
+          "path": "financials.recoverable_7d",
+          "source_rule_id": "recoverable_value_rule_v1"
+        },
+        {
+          "path": "financials.risk_7d",
+          "source_rule_id": "risk_projection_rule_v1"
+        },
+        {
+          "path": "decision_block.execute_value",
+          "source_rule_id": "decision_execute_rule_v1"
+        },
+        {
+          "path": "decision_block.ignore_value",
+          "source_rule_id": "decision_ignore_rule_v1"
+        },
+        {
+          "path": "decision_block.net_delta",
+          "source_rule_id": "decision_delta_rule_v1"
+        }
+      ]
+    }
+  },
+  "data_quality": {
+    "missing_target_actions": 0,
+    "high_return_products_detected": 0,
+    "out_of_stock_variants_detected": 24
+  },
+  "action_states": {},
+  "verification_rows": []
+}

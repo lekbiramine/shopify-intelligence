@@ -29,6 +29,7 @@ SMTP_HOST = os.getenv("SMTP_HOST")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USE_SSL = (os.getenv("SMTP_USE_SSL") or "").strip().lower() in {"1", "true", "yes", "on"}
 SMTP_USE_STARTTLS = (os.getenv("SMTP_USE_STARTTLS") or "").strip().lower() in {"1", "true", "yes", "on"}
+CRON_SECRET = (os.getenv("CRON_SECRET") or "").strip()
 
 # Optional CC on every store intelligence report email. If unset, copies lekbiramine09@gmail.com.
 # Set to empty (STORE_REPORT_CC_EMAIL=) to disable; set to another address to override.
@@ -80,4 +81,15 @@ def validate_email_env() -> None:
     if missing_email:
         raise EnvironmentError(
             f"Missing email environment variables: {missing_email}"
+        )
+
+
+def validate_cron_env() -> None:
+    required_cron = {
+        "CRON_SECRET": CRON_SECRET,
+    }
+    missing_cron = [key for key, value in required_cron.items() if not value]
+    if missing_cron:
+        raise EnvironmentError(
+            f"Missing cron environment variables: {missing_cron}"
         )

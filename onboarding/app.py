@@ -3,16 +3,16 @@ import html
 import hmac
 import os
 import secrets
-import threading
 import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, unquote_plus, urlencode
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
+from config import settings
 from config.logging_config import get_logger
 from utils.shopify_auth import (
     fetch_access_scopes,
@@ -125,60 +125,6 @@ def _frontend_hash_route(route: str) -> str:
     """
     normalized_route = "/" + (route or "").strip().lstrip("/")
     return f"{FRONTEND_URL.rstrip('/')}/#{normalized_route}"
-
-
-def _run_post_install_sync_and_report(*, store: dict, shop_domain: str) -> None:
-    """
-    Run ETL + reporting after OAuth in a background thread with explicit logging.
-    This ensures failures are visible in platform logs (e.g. Vercel).
-    """
-    store_id = int((store or {}).get("id") or 0)
-    if store_id <= 0:
-        logger.error(
-            "Skipping post-install sync: missing store_id",
-            extra={"shop_domain": shop_domain},
-        )
-        return
-
-    access_token = str((store or {}).get("access_token") or "").strip()
-    refresh_token = (str((store or {}).get("refresh_token") or "").strip() or None)
-    access_token_expires_at = (store or {}).get("access_token_expires_at")
-    if not access_token:
-        logger.error(
-            "Skipping post-install sync: missing access_token",
-            extra={"shop_domain": shop_domain, "store_id": store_id},
-        )
-        return
-
-    try:
-        from scheduler.run_pipeline import run_etl_for_store, run_reporting_for_store
-
-        logger.info(
-            "Starting post-install ETL + reporting",
-            extra={"shop_domain": shop_domain, "store_id": store_id},
-        )
-        run_etl_for_store(
-            store_id=store_id,
-            shop_domain=shop_domain,
-            access_token=access_token,
-            refresh_token=refresh_token,
-            access_token_expires_at=access_token_expires_at,
-        )
-        report_path, recipient = run_reporting_for_store(store_id=store_id)
-        logger.info(
-            "Post-install ETL + reporting completed",
-            extra={
-                "shop_domain": shop_domain,
-                "store_id": store_id,
-                "report_path": report_path,
-                "recipient": recipient,
-            },
-        )
-    except Exception:
-        logger.exception(
-            "Post-install ETL/reporting failed",
-            extra={"shop_domain": shop_domain, "store_id": store_id},
-        )
 
 
 def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
@@ -362,17 +308,6 @@ def oauth_callback(
         if recipient:
             upsert_store_contact_email(shop_domain, recipient)
 
-        store = get_store_by_domain(shop_domain)
-        store_id = int((store or {}).get("id") or 0)
-        if store_id > 0:
-            thread = threading.Thread(
-                target=_run_post_install_sync_and_report,
-                kwargs={"store": store or {}, "shop_domain": shop_domain},
-                name=f"post-install-sync-{store_id}",
-            )
-            thread.daemon = True
-            thread.start()
-
         if referral_code_id and referral_code_used:
             attach_store_referral(shop_domain, referral_code_id, referral_code_used)
 
@@ -396,6 +331,79 @@ def healthz() -> dict[str, str]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/cron/run-pipeline")
+def run_pipeline_cron(authorization: str | None = Header(default=None)) -> dict:
+    try:
+        settings.validate_cron_env()
+    except EnvironmentError as exc:
+        logger.error("Cron trigger rejected: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    expected_secret = (settings.CRON_SECRET or "").strip()
+
+    expected_auth = f"Bearer {expected_secret}"
+    if (authorization or "").strip() != expected_auth:
+        logger.warning("Cron trigger rejected: invalid Authorization header")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    from db.queries import list_connected_stores_for_cron
+    from scheduler.run_pipeline import run_etl_for_store, run_reporting_for_store
+
+    stores = list_connected_stores_for_cron()
+    logger.info("Cron pipeline started for %s stores", len(stores))
+
+    attempted = 0
+    succeeded = 0
+    failed = 0
+    for store in stores:
+        store_id = int(store["id"])
+        shop_domain = str(store.get("shop_domain") or "").strip()
+        attempted += 1
+        try:
+            logger.info(
+                "Cron pipeline store started",
+                extra={"store_id": store_id, "shop_domain": shop_domain},
+            )
+            run_etl_for_store(
+                store_id=store_id,
+                shop_domain=shop_domain,
+                access_token=str(store.get("access_token") or "").strip(),
+                refresh_token=(str(store.get("refresh_token") or "").strip() or None),
+                access_token_expires_at=store.get("access_token_expires_at"),
+            )
+            report_path, recipient = run_reporting_for_store(store_id=store_id)
+            logger.info(
+                "Cron pipeline store completed",
+                extra={
+                    "store_id": store_id,
+                    "shop_domain": shop_domain,
+                    "report_path": report_path,
+                    "recipient": recipient,
+                },
+            )
+            succeeded += 1
+        except Exception:
+            failed += 1
+            logger.exception(
+                "Cron pipeline store failed",
+                extra={"store_id": store_id, "shop_domain": shop_domain},
+            )
+
+    logger.info(
+        "Cron pipeline finished: total=%s attempted=%s succeeded=%s failed=%s",
+        len(stores),
+        attempted,
+        succeeded,
+        failed,
+    )
+    return {
+        "status": "ok",
+        "total": len(stores),
+        "attempted": attempted,
+        "succeeded": succeeded,
+        "failed": failed,
+    }
 
 
 @app.get("/unsubscribe")

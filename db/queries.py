@@ -425,6 +425,29 @@ def list_manual_reportable_stores() -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def list_connected_stores_for_cron() -> list[dict]:
+    """
+    Stores eligible for cron-driven ETL/reporting runs.
+    """
+    sql = """
+        SELECT id,
+               shop_domain,
+               access_token,
+               refresh_token,
+               access_token_expires_at,
+               contact_email
+        FROM stores
+        WHERE is_active = TRUE
+          AND connected_at IS NOT NULL
+          AND access_token IS NOT NULL
+        ORDER BY id ASC;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql)
+        rows = cursor.fetchall() or []
+        return [dict(r) for r in rows]
+
+
 def deactivate_likely_test_stores() -> list[dict]:
     """
     Hardens the DB against legacy demo/test shops being accidentally scheduled.
