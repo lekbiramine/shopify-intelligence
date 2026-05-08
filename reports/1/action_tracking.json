@@ -42,9 +42,9 @@
       "executed_at": null,
       "snoozed_until": "2026-05-02T09:54:34.675345+00:00",
       "ignored_at": null,
-      "impact_realized_24h": 53.84,
-      "impact_realized_7d": 376.9,
-      "last_verification_at": "2026-05-07T17:18:00.062539+00:00"
+      "impact_realized_24h": 0.0,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": "2026-05-08T09:01:31.695818+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -54,9 +54,9 @@
       "executed_at": null,
       "snoozed_until": null,
       "ignored_at": null,
-      "impact_realized_24h": 53.84,
-      "impact_realized_7d": 376.9,
-      "last_verification_at": "2026-05-07T17:17:59.681540+00:00"
+      "impact_realized_24h": 0.0,
+      "impact_realized_7d": 0.0,
+      "last_verification_at": "2026-05-08T09:01:11.009828+00:00"
     },
     "action_3": {
       "action_id": "action_3",
@@ -160,15 +160,15 @@
       "action_id": "action_2",
       "window": "7d",
       "predicted_recovered_7d": 20.0,
-      "actual_recovered_7d": 376.9,
-      "delta": 356.9
+      "actual_recovered_7d": 0.0,
+      "delta": -20.0
     },
     {
       "action_id": "action_1",
       "window": "7d",
       "predicted_recovered_7d": 159.92,
-      "actual_recovered_7d": 376.9,
-      "delta": 216.98
+      "actual_recovered_7d": 0.0,
+      "delta": -159.92
     }
   ],
   "score_feedback": {

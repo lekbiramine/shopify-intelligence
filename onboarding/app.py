@@ -127,6 +127,60 @@ def _frontend_hash_route(route: str) -> str:
     return f"{FRONTEND_URL.rstrip('/')}/#{normalized_route}"
 
 
+def _run_post_install_sync_and_report(*, store: dict, shop_domain: str) -> None:
+    """
+    Run ETL + reporting after OAuth in a background thread with explicit logging.
+    This ensures failures are visible in platform logs (e.g. Vercel).
+    """
+    store_id = int((store or {}).get("id") or 0)
+    if store_id <= 0:
+        logger.error(
+            "Skipping post-install sync: missing store_id",
+            extra={"shop_domain": shop_domain},
+        )
+        return
+
+    access_token = str((store or {}).get("access_token") or "").strip()
+    refresh_token = (str((store or {}).get("refresh_token") or "").strip() or None)
+    access_token_expires_at = (store or {}).get("access_token_expires_at")
+    if not access_token:
+        logger.error(
+            "Skipping post-install sync: missing access_token",
+            extra={"shop_domain": shop_domain, "store_id": store_id},
+        )
+        return
+
+    try:
+        from scheduler.run_pipeline import run_etl_for_store, run_reporting_for_store
+
+        logger.info(
+            "Starting post-install ETL + reporting",
+            extra={"shop_domain": shop_domain, "store_id": store_id},
+        )
+        run_etl_for_store(
+            store_id=store_id,
+            shop_domain=shop_domain,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_token_expires_at=access_token_expires_at,
+        )
+        report_path, recipient = run_reporting_for_store(store_id=store_id)
+        logger.info(
+            "Post-install ETL + reporting completed",
+            extra={
+                "shop_domain": shop_domain,
+                "store_id": store_id,
+                "report_path": report_path,
+                "recipient": recipient,
+            },
+        )
+    except Exception:
+        logger.exception(
+            "Post-install ETL/reporting failed",
+            extra={"shop_domain": shop_domain, "store_id": store_id},
+        )
+
+
 def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
     pairs = parse_qsl(raw_query, keep_blank_values=True, strict_parsing=False)
     hmac_received = ""
@@ -311,11 +365,10 @@ def oauth_callback(
         store = get_store_by_domain(shop_domain)
         store_id = int((store or {}).get("id") or 0)
         if store_id > 0:
-            from scheduler.run_pipeline import run_reporting_for_store
-
             thread = threading.Thread(
-                target=lambda sid: run_reporting_for_store(store_id=sid),
-                args=(store_id,),
+                target=_run_post_install_sync_and_report,
+                kwargs={"store": store or {}, "shop_domain": shop_domain},
+                name=f"post-install-sync-{store_id}",
             )
             thread.daemon = True
             thread.start()

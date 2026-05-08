@@ -51,13 +51,15 @@ def send_email(
     if not to_addr:
         raise EnvironmentError("No recipient provided.")
     if cc:
-        logger.info(f"Sending email to {to_addr} (Cc: {cc})...")
+        logger.info("Sending email to %s (Cc: %s)...", to_addr, cc)
     else:
-        logger.info(f"Sending email to {to_addr}...")
+        logger.info("Sending email to %s...", to_addr)
     settings.validate_email_env()
 
     msg = build_email(subject, body, html_body=html_body, recipient=to_addr, cc=cc)
     context = ssl.create_default_context()
+    smtp_host = str(settings.SMTP_HOST or "").strip()
+    smtp_port = int(settings.SMTP_PORT)
 
     try:
         use_ssl = settings.SMTP_USE_SSL or (settings.SMTP_PORT == 465 and not settings.SMTP_USE_STARTTLS)
@@ -65,30 +67,49 @@ def send_email(
 
         if use_ssl:
             with smtplib.SMTP_SSL(
-                settings.SMTP_HOST,
-                settings.SMTP_PORT,
+                smtp_host,
+                smtp_port,
                 context=context,
+                timeout=20,
             ) as server:
                 server.login(settings.SMTP_USERNAME, settings.EMAIL_PASSWORD)
                 server.send_message(msg)
         else:
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
                 server.ehlo()
                 if use_starttls:
                     server.starttls(context=context)
                     server.ehlo()
                 server.login(settings.SMTP_USERNAME, settings.EMAIL_PASSWORD)
                 server.send_message(msg)
-        logger.info("Email sent successfully.")
+        logger.info(
+            "Email sent successfully.",
+            extra={"recipient": to_addr, "cc": cc or "", "smtp_host": smtp_host, "smtp_port": smtp_port},
+        )
 
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"SMTP authentication failed: {e}")
+    except smtplib.SMTPAuthenticationError:
+        logger.exception(
+            "SMTP authentication failed for recipient=%s via %s:%s",
+            to_addr,
+            smtp_host,
+            smtp_port,
+        )
         raise
-    except smtplib.SMTPException as e:
-        logger.error(f"SMTP error occurred: {e}")
+    except smtplib.SMTPException:
+        logger.exception(
+            "SMTP error for recipient=%s via %s:%s",
+            to_addr,
+            smtp_host,
+            smtp_port,
+        )
         raise
-    except Exception as e:
-        logger.error(f"Unexpected error sending email: {e}")
+    except Exception:
+        logger.exception(
+            "Unexpected error sending email for recipient=%s via %s:%s",
+            to_addr,
+            smtp_host,
+            smtp_port,
+        )
         raise
 
 
