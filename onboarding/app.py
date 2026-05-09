@@ -29,10 +29,17 @@ SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY", "")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET", "")
 SHOPIFY_APP_BASE_URL = os.getenv("SHOPIFY_APP_BASE_URL", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-SHOPIFY_SCOPES = os.getenv(
-    "SHOPIFY_SCOPES",
-    "read_products,read_orders,read_customers,read_inventory",
-).strip()
+SHOPIFY_SCOPES = settings.SHOPIFY_SCOPES
+REQUIRED_SHOPIFY_SCOPES = {
+    "read_orders",
+    "read_customers",
+    "read_products",
+    "read_inventory",
+}
+
+
+def _parse_scope_csv(scope_csv: str) -> list[str]:
+    return sorted({s.strip() for s in (scope_csv or "").split(",") if s.strip()})
 
 
 def _ensure_oauth_env() -> None:
@@ -47,6 +54,16 @@ def _ensure_oauth_env() -> None:
     ]
     if missing:
         raise HTTPException(status_code=500, detail=f"Missing OAuth env vars: {missing}")
+    configured_scopes = set(_parse_scope_csv(SHOPIFY_SCOPES))
+    missing_required_scopes = sorted(REQUIRED_SHOPIFY_SCOPES - configured_scopes)
+    if missing_required_scopes:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "SHOPIFY_SCOPES is missing required scopes: "
+                f"{missing_required_scopes}. Configured: {sorted(configured_scopes)}"
+            ),
+        )
 
 
 def _build_state(shop_domain: str) -> str:
@@ -181,14 +198,20 @@ def install(
     create_oauth_state(_state_hash(state), shop_domain, ttl_seconds=600)
     redirect_uri = f"{SHOPIFY_APP_BASE_URL.rstrip('/')}/oauth/callback"
     query = urlencode(
-        {
-            "client_id": SHOPIFY_API_KEY,
-            "scope": SHOPIFY_SCOPES,
-            "redirect_uri": redirect_uri,
-            "state": state,
-        }
+        [
+            ("client_id", SHOPIFY_API_KEY),
+            ("scope", SHOPIFY_SCOPES),
+            ("redirect_uri", redirect_uri),
+            ("state", state),
+            ("grant_options[]", "per-user"),
+        ]
     )
     auth_url = f"https://{shop_domain}/admin/oauth/authorize?{query}"
+    logger.info(
+        "Shopify install URL scopes for %s: %s (grant_options[]=per-user)",
+        shop_domain,
+        SHOPIFY_SCOPES,
+    )
     return RedirectResponse(url=auth_url)
 
 
@@ -247,8 +270,22 @@ def oauth_callback(
                 logger.warning("Unexpected expires_in value from Shopify for %s: %r", shop_domain, expires_in)
 
         token_scope_csv = (token_data.get("scope") or "").strip()
+        logger.info(
+            "Shopify token response scopes for %s: %s",
+            shop_domain,
+            token_scope_csv or "<empty>",
+        )
         if token_scope_csv:
-            scopes = sorted({s.strip() for s in token_scope_csv.split(",") if s.strip()})
+            scopes = _parse_scope_csv(token_scope_csv)
+            missing_from_token = sorted(REQUIRED_SHOPIFY_SCOPES - set(scopes))
+            if missing_from_token:
+                logger.warning(
+                    "Token response missing required scopes for %s: missing=%s required=%s granted=%s",
+                    shop_domain,
+                    missing_from_token,
+                    sorted(REQUIRED_SHOPIFY_SCOPES),
+                    scopes,
+                )
             logger.info("Using scopes returned by token exchange for %s", shop_domain)
         else:
             scopes = []

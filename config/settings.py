@@ -6,6 +6,10 @@ load_dotenv()
 # Shopify
 SHOPIFY_STORE_URL = os.getenv("SHOPIFY_STORE_URL")
 SHOPIFY_ACCESS_TOKEN = os.getenv("SHOPIFY_ACCESS_TOKEN")
+SHOPIFY_SCOPES = (
+    os.getenv("SHOPIFY_SCOPES")
+    or "read_products,read_orders,read_customers,read_inventory"
+).strip()
 MODAL_TOKEN_ID = (os.getenv("MODAL_TOKEN_ID") or "").strip()
 MODAL_TOKEN_SECRET = (os.getenv("MODAL_TOKEN_SECRET") or "").strip()
 
