@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from config import settings
 from config.logging_config import get_logger
+from modal_jobs.pipeline import spawn_store_pipeline_job
 from utils.shopify_auth import (
     fetch_access_scopes,
     normalize_shop_domain,
@@ -311,6 +312,13 @@ def oauth_callback(
         if referral_code_id and referral_code_used:
             attach_store_referral(shop_domain, referral_code_id, referral_code_used)
 
+        try:
+            spawn_store_pipeline_job(shop_domain)
+            logger.info("Triggered Modal pipeline job after install for %s", shop_domain)
+        except Exception:
+            # Do not block successful OAuth completion if the background trigger fails.
+            logger.exception("Failed to trigger Modal pipeline job after install for %s", shop_domain)
+
         logger.info("Private app install completed for %s", shop_domain)
         return RedirectResponse(url=_frontend_hash_route("/success"), status_code=302)
 
@@ -348,13 +356,11 @@ def run_pipeline_cron(authorization: str | None = Header(default=None)) -> dict:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     from db.queries import list_connected_stores_for_cron
-    from scheduler.run_pipeline import run_etl_for_store, run_reporting_for_store
-
     stores = list_connected_stores_for_cron()
     logger.info("Cron pipeline started for %s stores", len(stores))
 
     attempted = 0
-    succeeded = 0
+    spawned = 0
     failed = 0
     for store in stores:
         store_id = int(store["id"])
@@ -365,43 +371,35 @@ def run_pipeline_cron(authorization: str | None = Header(default=None)) -> dict:
                 "Cron pipeline store started",
                 extra={"store_id": store_id, "shop_domain": shop_domain},
             )
-            run_etl_for_store(
-                store_id=store_id,
-                shop_domain=shop_domain,
-                access_token=str(store.get("access_token") or "").strip(),
-                refresh_token=(str(store.get("refresh_token") or "").strip() or None),
-                access_token_expires_at=store.get("access_token_expires_at"),
-            )
-            report_path, recipient = run_reporting_for_store(store_id=store_id)
+            job = spawn_store_pipeline_job(shop_domain)
             logger.info(
-                "Cron pipeline store completed",
+                "Cron pipeline store queued in Modal",
                 extra={
                     "store_id": store_id,
                     "shop_domain": shop_domain,
-                    "report_path": report_path,
-                    "recipient": recipient,
+                    "modal_job_id": getattr(job, "object_id", None),
                 },
             )
-            succeeded += 1
+            spawned += 1
         except Exception:
             failed += 1
             logger.exception(
-                "Cron pipeline store failed",
+                "Cron pipeline store queueing failed",
                 extra={"store_id": store_id, "shop_domain": shop_domain},
             )
 
     logger.info(
-        "Cron pipeline finished: total=%s attempted=%s succeeded=%s failed=%s",
+        "Cron pipeline queueing finished: total=%s attempted=%s spawned=%s failed=%s",
         len(stores),
         attempted,
-        succeeded,
+        spawned,
         failed,
     )
     return {
         "status": "ok",
         "total": len(stores),
         "attempted": attempted,
-        "succeeded": succeeded,
+        "spawned": spawned,
         "failed": failed,
     }
 

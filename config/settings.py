@@ -6,6 +6,8 @@ load_dotenv()
 # Shopify
 SHOPIFY_STORE_URL = os.getenv("SHOPIFY_STORE_URL")
 SHOPIFY_ACCESS_TOKEN = os.getenv("SHOPIFY_ACCESS_TOKEN")
+MODAL_TOKEN_ID = (os.getenv("MODAL_TOKEN_ID") or "").strip()
+MODAL_TOKEN_SECRET = (os.getenv("MODAL_TOKEN_SECRET") or "").strip()
 
 # Database
 DB_HOST = os.getenv("DB_HOST")
@@ -92,4 +94,16 @@ def validate_cron_env() -> None:
     if missing_cron:
         raise EnvironmentError(
             f"Missing cron environment variables: {missing_cron}"
+        )
+
+
+def validate_modal_env() -> None:
+    required_modal = {
+        "MODAL_TOKEN_ID": MODAL_TOKEN_ID,
+        "MODAL_TOKEN_SECRET": MODAL_TOKEN_SECRET,
+    }
+    missing_modal = [key for key, value in required_modal.items() if not value]
+    if missing_modal:
+        raise EnvironmentError(
+            f"Missing Modal environment variables: {missing_modal}"
         )

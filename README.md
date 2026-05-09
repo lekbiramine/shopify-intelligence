@@ -33,6 +33,9 @@ The current deployment model uses a private Shopify app install flow (OAuth) for
   - `SMTP_USERNAME`, `EMAIL_PASSWORD`
   - `EMAIL_FROM` (displayed From header; can differ from SMTP login)
   - `EMAIL_SENDER` (legacy; still supported, used as fallback)
+- Modal background jobs (required in production/Vercel):
+  - `MODAL_TOKEN_ID`
+  - `MODAL_TOKEN_SECRET`
 
 ## Setup
 
@@ -178,6 +181,22 @@ python scripts\run_store_job.py --env-file "D:\client-envs\client-a.env"
 ```
 
 This runs ETL + report delivery for a previously onboarded store using stored per-shop OAuth credentials.
+
+### Modal background jobs (no request timeouts)
+
+Deploy the Modal app function:
+
+```bash
+modal deploy modal_jobs/pipeline.py
+```
+
+Create/update Modal secrets from your local `.env`:
+
+```bash
+modal secret create perspicor-env --from-dotenv .env --force
+```
+
+After this integration, onboarding install callback and `/api/cron/run-pipeline` queue jobs in Modal via `run_store_pipeline.spawn(shop_domain)` so ETL + email runs out-of-process in Modal cloud.
 
 ### Basic monitoring (job failures + email send status)
 
