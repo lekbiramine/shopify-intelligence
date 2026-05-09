@@ -5,6 +5,8 @@ from pathlib import Path
 
 import modal
 
+sys.path.insert(0, "/root")
+
 ENV_SECRET_KEYS = [
     "DB_HOST",
     "DB_NAME",
@@ -20,7 +22,14 @@ ENV_SECRET_KEYS = [
     "SHOPIFY_API_SECRET",
 ]
 
-image = modal.Image.debian_slim().pip_install_from_requirements("requirements.txt")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+image = (
+    modal.Image.debian_slim()
+    .pip_install_from_requirements("requirements.txt")
+    .workdir("/root")
+    .add_local_dir(str(PROJECT_ROOT), remote_path="/root")
+)
 app = modal.App("perspicor", image=image)
 pipeline_secret = modal.Secret.from_name("perspicor-env", required_keys=ENV_SECRET_KEYS)
 
@@ -28,13 +37,11 @@ pipeline_secret = modal.Secret.from_name("perspicor-env", required_keys=ENV_SECR
 @app.function(
     secrets=[pipeline_secret],
     timeout=60 * 60 * 24,
-    include_source=True,
 )
 def run_store_pipeline(shop_domain: str) -> None:
-    project_root = str(Path(__file__).resolve().parents[1])
-    os.chdir(project_root)
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
+    os.chdir("/root")
+    if "/root" not in sys.path:
+        sys.path.insert(0, "/root")
 
     from config.logging_config import get_logger, setup_logging
     from db.queries import get_store_by_domain
