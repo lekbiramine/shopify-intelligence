@@ -37,14 +37,6 @@ SMTP_USE_SSL = (os.getenv("SMTP_USE_SSL") or "").strip().lower() in {"1", "true"
 SMTP_USE_STARTTLS = (os.getenv("SMTP_USE_STARTTLS") or "").strip().lower() in {"1", "true", "yes", "on"}
 CRON_SECRET = (os.getenv("CRON_SECRET") or "").strip()
 
-# Optional CC on every store intelligence report email. If unset, copies lekbiramine09@gmail.com.
-# Set to empty (STORE_REPORT_CC_EMAIL=) to disable; set to another address to override.
-_raw_store_report_cc = os.getenv("STORE_REPORT_CC_EMAIL")
-if _raw_store_report_cc is None:
-    STORE_REPORT_CC_EMAIL = "lekbiramine09@gmail.com"
-else:
-    STORE_REPORT_CC_EMAIL = _raw_store_report_cc.strip() or None
-
 def validate_db_env() -> None:
     required = {
         "DB_HOST": DB_HOST,

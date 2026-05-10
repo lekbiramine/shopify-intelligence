@@ -267,8 +267,9 @@ def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) 
 
     safe_unsubscribe_url = escape(str(unsubscribe_url or "#"), quote=True)
     html = (
-        "<!doctype html>"
-        "<html><head>"
+        "<!DOCTYPE html>"
+        "<html lang=\"en\"><head>"
+        "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">"
         "<meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
         "<title>Perspicor Daily Report</title>"

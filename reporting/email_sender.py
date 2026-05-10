@@ -17,7 +17,6 @@ def build_email(
     body: str,
     recipient: str,
     html_body: str | None = None,
-    cc: str | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -26,11 +25,10 @@ def build_email(
     _, addr = parseaddr(settings.EMAIL_FROM or "")
     msg["From"] = formataddr(("Perspicor", addr or (settings.EMAIL_FROM or "")))
     msg["To"] = recipient
-    if cc:
-        msg["Cc"] = cc
-    msg.set_content(body)
+    # Explicit charsets so clients reliably pick text/html and render UTF-8.
+    msg.set_content(body, subtype="plain", charset="utf-8")
     if html_body:
-        msg.add_alternative(html_body, subtype="html")
+        msg.add_alternative(html_body, subtype="html", charset="utf-8")
     return msg
 
 
@@ -39,7 +37,6 @@ def send_email(
     body: str,
     recipient: str,
     html_body: str | None = None,
-    cc: str | None = None,
 ) -> None:
     """
     Sends an email via SMTP.
@@ -50,13 +47,10 @@ def send_email(
     to_addr = (recipient or "").strip()
     if not to_addr:
         raise EnvironmentError("No recipient provided.")
-    if cc:
-        logger.info("Sending email to %s (Cc: %s)...", to_addr, cc)
-    else:
-        logger.info("Sending email to %s...", to_addr)
+    logger.info("Sending email to %s...", to_addr)
     settings.validate_email_env()
 
-    msg = build_email(subject, body, html_body=html_body, recipient=to_addr, cc=cc)
+    msg = build_email(subject, body, html_body=html_body, recipient=to_addr)
     context = ssl.create_default_context()
     smtp_host = str(settings.SMTP_HOST or "").strip()
     smtp_port = int(settings.SMTP_PORT)
@@ -84,7 +78,7 @@ def send_email(
                 server.send_message(msg)
         logger.info(
             "Email sent successfully.",
-            extra={"recipient": to_addr, "cc": cc or "", "smtp_host": smtp_host, "smtp_port": smtp_port},
+            extra={"recipient": to_addr, "smtp_host": smtp_host, "smtp_port": smtp_port},
         )
 
     except smtplib.SMTPAuthenticationError:
@@ -147,18 +141,25 @@ def send_store_report_email(*, store_id: int, report_data: dict) -> str:
     if base_url and recipient:
         unsubscribe_url = f"{base_url}/unsubscribe?{urlencode({'email': recipient})}"
     html_content = build_html_report(report_data, unsubscribe_url=unsubscribe_url)
-    plain_body = (
-        f"{report_data.get('store_name') or f'Store {store_id}'} daily report\n"
-        f"Date: {report_data.get('date') or ''}\n"
-        f"Actions: {len(actions)}\n"
-        f"Total value: ${_format_subject_money(report_data.get('total_value'))}\n"
-    )
-    cc = settings.STORE_REPORT_CC_EMAIL
-    if cc and recipient and cc.strip().lower() == recipient.strip().lower():
-        cc = None
-    send_email(subject, plain_body, html_body=html_content, recipient=recipient, cc=cc)
+    store_label = str(report_data.get("store_name") or f"Store {store_id}")
+    plain_lines = [
+        f"{store_label} daily report",
+        f"Date: {report_data.get('date') or ''}",
+        f"Status: {report_data.get('status') or ''}",
+        f"Daily impact: ${_format_subject_money(report_data.get('daily_impact'))}",
+        f"Actions: {len(actions)}",
+        f"Total value: ${_format_subject_money(report_data.get('total_value'))}",
+        "",
+    ]
+    for i, action in enumerate(actions[:25], start=1):
+        label = str(action.get("type") or action.get("action_type") or "Action").strip() or "Action"
+        plain_lines.append(f"{i}. {label}")
+    if len(actions) > 25:
+        plain_lines.append(f"... and {len(actions) - 25} more.")
+    plain_body = "\n".join(plain_lines)
+    send_email(subject, plain_body, html_body=html_content, recipient=recipient)
     logger.info(
         "Store-scoped email sent",
-        extra={"store_id": store_id, "recipient": recipient, "cc": cc or ""},
+        extra={"store_id": store_id, "recipient": recipient},
     )
     return recipient
