@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Link, Navigate, Route, Routes } from 'react-router-dom'
+import Dashboard from './pages/Dashboard'
 
 function apiBaseUrl(): string {
   const base =
@@ -611,6 +612,7 @@ function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/connect" element={<ConnectPage />} />
+      <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/success" element={<SuccessPage />} />
       <Route path="/check-your-email" element={<Navigate to="/success" replace />} />
     </Routes>
