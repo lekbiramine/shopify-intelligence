@@ -8,6 +8,18 @@
   ],
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/app",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/app/:path*",
+      "destination": "/api/index"
+    },
+    {
       "source": "/install",
       "destination": "/api/index"
     },

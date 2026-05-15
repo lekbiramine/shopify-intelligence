@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from analytics.summary import build_summary
@@ -32,6 +32,27 @@ def handle_db_connection_error(_: Request, __: DatabaseConnectionError):
 @app.exception_handler(DatabaseQueryError)
 def handle_db_query_error(_: Request, __: DatabaseQueryError):
     return JSONResponse(status_code=500, content={"detail": "Database operation failed"})
+
+
+@app.get("/")
+async def root(shop: str | None = None):
+    if shop:
+        return RedirectResponse(
+            url=f"https://perspicor.com/dashboard?shop={shop}",
+            status_code=302,
+        )
+    return RedirectResponse(url="https://perspicor.com", status_code=302)
+
+
+@app.get("/app")
+@app.get("/app/{path:path}")
+async def app_redirect(path: str = "", shop: str | None = None):
+    if shop:
+        return RedirectResponse(
+            url=f"https://perspicor.com/dashboard?shop={shop}",
+            status_code=302,
+        )
+    return RedirectResponse(url="https://perspicor.com", status_code=302)
 
 
 class CompleteActionRequest(BaseModel):

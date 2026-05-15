@@ -170,6 +170,27 @@ def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
     return hmac.compare_digest(digest, hmac_received)
 
 
+@app.get("/")
+async def root(shop: str | None = None):
+    if shop:
+        return RedirectResponse(
+            url=f"https://perspicor.com/dashboard?shop={shop}",
+            status_code=302,
+        )
+    return RedirectResponse(url="https://perspicor.com", status_code=302)
+
+
+@app.get("/app")
+@app.get("/app/{path:path}")
+async def app_redirect(path: str = "", shop: str | None = None):
+    if shop:
+        return RedirectResponse(
+            url=f"https://perspicor.com/dashboard?shop={shop}",
+            status_code=302,
+        )
+    return RedirectResponse(url="https://perspicor.com", status_code=302)
+
+
 @app.get("/install")
 @app.get("/oauth/install")
 def install(
