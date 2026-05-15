@@ -534,12 +534,7 @@ function ConnectPage() {
       return
     }
     setError('')
-    const base = apiBaseUrl()
-    if (!base) {
-      setError('Configuration error: API URL is not set.')
-      return
-    }
-    window.location.href = `${base}/oauth/install?shop=${encodeURIComponent(normalized)}&email=${encodeURIComponent(email.trim())}`
+    window.location.href = `https://api.perspicor.com/oauth/install?shop=${encodeURIComponent(normalized)}&email=${encodeURIComponent(email.trim())}`
   }
 
   return (
