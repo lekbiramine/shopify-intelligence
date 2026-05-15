@@ -28,6 +28,19 @@ load_dotenv()
 
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY", "")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET", "")
+
+
+def _secret_prefix(value: str | None) -> str:
+    trimmed = (value or "").strip()
+    return trimmed[:4] if trimmed else "<empty>"
+
+
+logger.info(
+    "SHOPIFY_API_SECRET prefix at app load: os.getenv=%s module=%s",
+    _secret_prefix(os.getenv("SHOPIFY_API_SECRET", "")),
+    _secret_prefix(SHOPIFY_API_SECRET),
+)
+
 SHOPIFY_APP_BASE_URL = os.getenv("SHOPIFY_APP_BASE_URL", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 SECRET_KEY = os.getenv("SECRET_KEY", "")
@@ -207,6 +220,10 @@ def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
         filtered.append((key, value))
 
     if not hmac_received:
+        logger.info(
+            "Shopify OAuth HMAC debug: secret_prefix=%s received_hmac=<missing> computed_hmac=n/a",
+            _secret_prefix(SHOPIFY_API_SECRET),
+        )
         return False
 
     filtered.sort(key=lambda kv: (kv[0], kv[1]))
@@ -216,6 +233,12 @@ def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
         message.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
+    logger.info(
+        "Shopify OAuth HMAC debug: secret_prefix=%s received_hmac=%s computed_hmac=%s",
+        _secret_prefix(SHOPIFY_API_SECRET),
+        hmac_received,
+        digest,
+    )
     return hmac.compare_digest(digest, hmac_received)
 
 
