@@ -534,7 +534,8 @@ function ConnectPage() {
       return
     }
     setError('')
-    window.location.href = `https://api.perspicor.com/oauth/install?shop=${encodeURIComponent(normalized)}&email=${encodeURIComponent(email.trim())}`
+    const base = apiBaseUrl() || 'https://api.perspicor.com'
+    window.location.href = `${base}/oauth/install?shop=${encodeURIComponent(normalized)}&email=${encodeURIComponent(email.trim())}`
   }
 
   return (
