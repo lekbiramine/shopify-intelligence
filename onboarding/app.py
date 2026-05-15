@@ -10,7 +10,9 @@ from urllib.parse import parse_qsl, unquote_plus, urlencode
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from config import settings
 from config.logging_config import get_logger
@@ -22,13 +24,31 @@ from utils.shopify_auth import (
 )
 
 logger = get_logger(__name__)
-app = FastAPI(title="Shopify Private Install Onboarding")
 load_dotenv()
 
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY", "")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET", "")
 SHOPIFY_APP_BASE_URL = os.getenv("SHOPIFY_APP_BASE_URL", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+SECRET_KEY = os.getenv("SECRET_KEY", "")
+
+app = FastAPI(title="Shopify Private Install Onboarding")
+_cors_origins = list(
+    dict.fromkeys(
+        origin.rstrip("/")
+        for origin in (FRONTEND_URL, "http://localhost:5173")
+        if origin and origin.strip()
+    )
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["*"],
+)
+SHOP_COOKIE_NAME = "perspicor_shop"
+SHOP_COOKIE_MAX_AGE = 2_592_000
 SHOPIFY_SCOPES = settings.SHOPIFY_SCOPES
 REQUIRED_SHOPIFY_SCOPES = {
     "read_orders",
@@ -40,6 +60,35 @@ REQUIRED_SHOPIFY_SCOPES = {
 
 def _parse_scope_csv(scope_csv: str) -> list[str]:
     return sorted({s.strip() for s in (scope_csv or "").split(",") if s.strip()})
+
+
+def _shop_cookie_serializer() -> URLSafeTimedSerializer:
+    secret = (SECRET_KEY or "").strip()
+    if not secret:
+        raise RuntimeError("SECRET_KEY is not set")
+    return URLSafeTimedSerializer(secret, salt="perspicor-shop")
+
+
+def _sign_shop_cookie(shop_domain: str) -> str:
+    return _shop_cookie_serializer().dumps(shop_domain)
+
+
+def _unsign_shop_cookie(signed_value: str) -> str:
+    return _shop_cookie_serializer().loads(signed_value, max_age=SHOP_COOKIE_MAX_AGE)
+
+
+def _dashboard_redirect_response(shop_domain: str) -> RedirectResponse:
+    redirect_url = f"{FRONTEND_URL.rstrip('/')}/dashboard?{urlencode({'shop': shop_domain})}"
+    response = RedirectResponse(url=redirect_url, status_code=302)
+    response.set_cookie(
+        key=SHOP_COOKIE_NAME,
+        value=_sign_shop_cookie(shop_domain),
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=SHOP_COOKIE_MAX_AGE,
+    )
+    return response
 
 
 def _ensure_oauth_env() -> None:
@@ -378,7 +427,7 @@ def oauth_callback(
             logger.exception("Failed to trigger Modal pipeline job after install for %s", shop_domain)
 
         logger.info("Private app install completed for %s", shop_domain)
-        return RedirectResponse(url=_frontend_hash_route("/success"), status_code=302)
+        return _dashboard_redirect_response(shop_domain)
 
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)
@@ -387,6 +436,31 @@ def oauth_callback(
     except Exception:
         logger.exception("OAuth callback failed")
         return PlainTextResponse("Internal server error.", status_code=500)
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request):
+    from db.queries import get_store_by_domain
+
+    signed_shop = request.cookies.get(SHOP_COOKIE_NAME)
+    if not signed_shop:
+        return JSONResponse({"authenticated": False}, status_code=401)
+
+    try:
+        shop_domain = normalize_shop_domain(_unsign_shop_cookie(signed_shop))
+    except (BadSignature, SignatureExpired, ValueError, RuntimeError):
+        return JSONResponse({"authenticated": False}, status_code=401)
+
+    try:
+        store = get_store_by_domain(shop_domain)
+    except Exception:
+        logger.exception("auth_me store lookup failed for %s", shop_domain)
+        return JSONResponse({"authenticated": False}, status_code=401)
+
+    if not store or not store.get("is_active"):
+        return JSONResponse({"authenticated": False}, status_code=401)
+
+    return {"shop": shop_domain, "authenticated": True}
 
 
 @app.get("/healthz")

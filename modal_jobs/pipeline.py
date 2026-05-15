@@ -20,6 +20,8 @@ ENV_SECRET_KEYS = [
     "EMAIL_FROM",
     "SHOPIFY_API_KEY",
     "SHOPIFY_API_SECRET",
+    "SECRET_KEY",
+    "FRONTEND_URL",
 ]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

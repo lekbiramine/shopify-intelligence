@@ -46,6 +46,10 @@
     {
       "source": "/api/cron/run-pipeline",
       "destination": "/api/index"
+    },
+    {
+      "source": "/api/auth/me",
+      "destination": "/api/index"
     }
   ]
 }
