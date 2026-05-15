@@ -1,0 +1,16 @@
+name = "Perspicor"
+client_id = "b06956a2578a8cbd7e5d96d6216477c0"
+application_url = "https://api.perspicor.com"
+embedded = false
+
+[access_scopes]
+scopes = "read_products,read_customers,read_orders,read_inventory"
+
+[auth]
+redirect_urls = [
+  "https://api.perspicor.com/oauth/callback",
+  "https://perspicor.vercel.app/oauth/callback"
+]
+
+[webhooks]
+api_version = "2026-04"
