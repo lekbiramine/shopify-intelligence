@@ -22,9 +22,10 @@ from utils.shopify_auth import (
     normalize_shop_domain,
     validate_read_only_scopes,
 )
+from utils.shopify_oauth_hmac import shopify_client_secret, verify_oauth_callback_hmac
 
 logger = get_logger(__name__)
-load_dotenv()
+load_dotenv(override=False)
 
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY", "")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET", "")
@@ -219,41 +220,6 @@ def _frontend_hash_route(route: str) -> str:
     return f"{FRONTEND_URL.rstrip('/')}/#{normalized_route}"
 
 
-def _verify_shopify_hmac_from_raw_query(raw_query: str) -> bool:
-    pairs = parse_qsl(raw_query, keep_blank_values=True, strict_parsing=False)
-    hmac_received = ""
-    filtered: list[tuple[str, str]] = []
-    for key, value in pairs:
-        if key == "hmac":
-            hmac_received = (value or "").strip()
-            continue
-        if key == "signature":
-            continue
-        filtered.append((key, value))
-
-    if not hmac_received:
-        logger.info(
-            "Shopify OAuth HMAC debug: secret_prefix=%s received_hmac=<missing> computed_hmac=n/a",
-            _secret_prefix(SHOPIFY_API_SECRET),
-        )
-        return False
-
-    filtered.sort(key=lambda kv: (kv[0], kv[1]))
-    message = "&".join(f"{k}={v}" for k, v in filtered)
-    digest = hmac.new(
-        SHOPIFY_API_SECRET.encode("utf-8"),
-        message.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    logger.info(
-        "Shopify OAuth HMAC debug: secret_prefix=%s received_hmac=%s computed_hmac=%s",
-        _secret_prefix(SHOPIFY_API_SECRET),
-        hmac_received,
-        digest,
-    )
-    return hmac.compare_digest(digest, hmac_received)
-
-
 @app.get("/")
 async def root(shop: str | None = None):
     if shop:
@@ -346,16 +312,21 @@ def oauth_callback(
         _ensure_oauth_env()
         shop_domain = normalize_shop_domain(shop)
 
-        raw_query = request.scope.get("query_string", b"").decode("utf-8", errors="replace")
-        if not _verify_shopify_hmac_from_raw_query(raw_query):
-            return PlainTextResponse("Invalid Shopify HMAC.", status_code=400)
+        if not verify_oauth_callback_hmac(request, secret=shopify_client_secret() or SHOPIFY_API_SECRET):
+            return PlainTextResponse(
+                "Invalid Shopify HMAC. In Vercel (api.perspicor.com), set SHOPIFY_API_SECRET to the "
+                "Client secret from Shopify Dev Dashboard → your app → API credentials "
+                "(must pair with SHOPIFY_API_KEY).",
+                status_code=400,
+            )
         if not _validate_state(state, shop_domain):
             return PlainTextResponse("Invalid or expired state.", status_code=400)
 
         token_url = f"https://{shop_domain}/admin/oauth/access_token"
+        api_secret = shopify_client_secret() or SHOPIFY_API_SECRET
         payload = {
             "client_id": SHOPIFY_API_KEY,
-            "client_secret": SHOPIFY_API_SECRET,
+            "client_secret": api_secret,
             "code": code,
             "expiring": "1",
         }
