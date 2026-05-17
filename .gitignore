@@ -16,7 +16,7 @@ venv/
 .venv/
 
 # Logs
-logs/*.log
+logs/
 
 # Data
 data/raw/
