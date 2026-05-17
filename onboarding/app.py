@@ -90,17 +90,29 @@ def _unsign_shop_cookie(signed_value: str) -> str:
     return _shop_cookie_serializer().loads(signed_value, max_age=SHOP_COOKIE_MAX_AGE)
 
 
-def _dashboard_redirect_response(shop_domain: str) -> RedirectResponse:
-    redirect_url = f"{FRONTEND_URL.rstrip('/')}/dashboard?{urlencode({'shop': shop_domain})}"
+def _attach_shop_cookie(response: RedirectResponse, shop_domain: str) -> None:
+    """Best-effort session cookie for /api/auth/me (optional; shop is also in the redirect URL)."""
+    if not (SECRET_KEY or "").strip():
+        logger.warning("SECRET_KEY is not set; skipping shop session cookie for %s", shop_domain)
+        return
+    try:
+        response.set_cookie(
+            key=SHOP_COOKIE_NAME,
+            value=_sign_shop_cookie(shop_domain),
+            httponly=True,
+            secure=True,
+            samesite="none",
+            max_age=SHOP_COOKIE_MAX_AGE,
+        )
+    except Exception:
+        logger.exception("Failed to set shop session cookie for %s", shop_domain)
+
+
+def _post_install_redirect_response(shop_domain: str) -> RedirectResponse:
+    # Success page does not require cross-site cookies (avoids 500s and api↔frontend cookie issues).
+    redirect_url = f"{FRONTEND_URL.rstrip('/')}/success?{urlencode({'shop': shop_domain})}"
     response = RedirectResponse(url=redirect_url, status_code=302)
-    response.set_cookie(
-        key=SHOP_COOKIE_NAME,
-        value=_sign_shop_cookie(shop_domain),
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=SHOP_COOKIE_MAX_AGE,
-    )
+    _attach_shop_cookie(response, shop_domain)
     return response
 
 
@@ -272,40 +284,46 @@ def install(
 ) -> RedirectResponse:
     from db.queries import set_store_referral_code, upsert_store_contact_email
 
-    _ensure_oauth_env()
     try:
-        shop_domain = normalize_shop_domain(shop)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    recipient = (email or "").strip()
-    referral_code = _normalize_referral_code(ref)
-    if recipient:
-        upsert_store_contact_email(shop_domain, recipient)
-    if referral_code:
-        # Store pending referral code before OAuth callback.
-        set_store_referral_code(shop_domain, referral_code)
+        _ensure_oauth_env()
+        try:
+            shop_domain = normalize_shop_domain(shop)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        recipient = (email or "").strip()
+        referral_code = _normalize_referral_code(ref)
+        if recipient:
+            upsert_store_contact_email(shop_domain, recipient)
+        if referral_code:
+            # Store pending referral code before OAuth callback.
+            set_store_referral_code(shop_domain, referral_code)
 
-    state = _build_state(shop_domain)
-    from db.queries import create_oauth_state
+        state = _build_state(shop_domain)
+        from db.queries import create_oauth_state
 
-    create_oauth_state(_state_hash(state), shop_domain, ttl_seconds=600)
-    redirect_uri = f"{SHOPIFY_APP_BASE_URL.rstrip('/')}/oauth/callback"
-    query = urlencode(
-        [
-            ("client_id", SHOPIFY_API_KEY),
-            ("scope", SHOPIFY_SCOPES),
-            ("redirect_uri", redirect_uri),
-            ("state", state),
-            ("grant_options[]", "per-user"),
-        ]
-    )
-    auth_url = f"https://{shop_domain}/admin/oauth/authorize?{query}"
-    logger.info(
-        "Shopify install URL scopes for %s: %s (grant_options[]=per-user)",
-        shop_domain,
-        SHOPIFY_SCOPES,
-    )
-    return RedirectResponse(url=auth_url)
+        create_oauth_state(_state_hash(state), shop_domain, ttl_seconds=600)
+        redirect_uri = f"{SHOPIFY_APP_BASE_URL.rstrip('/')}/oauth/callback"
+        query = urlencode(
+            [
+                ("client_id", SHOPIFY_API_KEY),
+                ("scope", SHOPIFY_SCOPES),
+                ("redirect_uri", redirect_uri),
+                ("state", state),
+                ("grant_options[]", "per-user"),
+            ]
+        )
+        auth_url = f"https://{shop_domain}/admin/oauth/authorize?{query}"
+        logger.info(
+            "Shopify install URL scopes for %s: %s (grant_options[]=per-user)",
+            shop_domain,
+            SHOPIFY_SCOPES,
+        )
+        return RedirectResponse(url=auth_url)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("OAuth install failed for shop=%s", shop)
+        raise HTTPException(status_code=500, detail="Install failed. Please try again.") from exc
 
 
 @app.get("/oauth/callback")
@@ -450,7 +468,7 @@ def oauth_callback(
             logger.exception("Failed to trigger Modal pipeline job after install for %s", shop_domain)
 
         logger.info("Private app install completed for %s", shop_domain)
-        return _dashboard_redirect_response(shop_domain)
+        return _post_install_redirect_response(shop_domain)
 
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)

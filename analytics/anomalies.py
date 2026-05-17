@@ -108,7 +108,6 @@ def get_products_with_no_sales(store_id: int) -> list[dict]:
         AND p.status = 'active'
         AND oi.id IS NULL
         GROUP BY p.id, p.title, p.vendor, p.product_type, p.created_at
-        HAVING COALESCE(SUM(i.available), 0) > 0
         ORDER BY est_on_hand_value DESC, p.created_at DESC;
     """
     with get_cursor() as cursor:

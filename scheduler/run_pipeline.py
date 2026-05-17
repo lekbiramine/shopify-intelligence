@@ -10,6 +10,7 @@ from config.logging_config import get_logger
 from config import constants as app_constants
 from config import settings
 from db.queries import (
+    count_store_sync_stats,
     create_report_record,
     get_store_contact_email_by_id,
     get_store_display_name_by_id,
@@ -251,7 +252,19 @@ def run_etl_for_store(
     load_orders(attach_store_id(orders, store_id), attach_store_id(order_items, store_id))
     load_inventory(attach_store_id(inventory, store_id))
 
-    logger.info("ETL pipeline completed.")
+    sync_stats = count_store_sync_stats(store_id)
+    logger.info(
+        "ETL pipeline completed for store_id=%s: products=%s variants=%s orders=%s",
+        store_id,
+        sync_stats["products"],
+        sync_stats["variants"],
+        sync_stats["orders"],
+    )
+    if sync_stats["products"] == 0:
+        raise RuntimeError(
+            f"ETL synced zero products for {shop_domain}. "
+            "Verify the app has read_products scope and the store has active products."
+        )
 
 
 def _assert_store_report_delivery_scope(*, store_id: int, report_path: str, recipient_email: str) -> None:
@@ -815,6 +828,13 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
 def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
     logger.info("[store_id=%s] Running report for shop_domain", store_id)
     logger.info("Starting reporting pipeline...", extra={"store_id": store_id})
+
+    sync_stats = count_store_sync_stats(store_id)
+    if sync_stats["products"] == 0:
+        raise RuntimeError(
+            f"Refusing to send report for store_id={store_id}: no products in database "
+            "(run ETL first or re-connect the store)."
+        )
 
     _log_all_registered_insight_signals(store_id)
     summary = build_summary(store_id)

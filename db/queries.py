@@ -89,6 +89,24 @@ def upsert_store_contact_email(shop_domain: str, contact_email: str) -> None:
         cursor.execute(sql, (shop_domain, contact_email))
 
 
+def count_store_sync_stats(store_id: int) -> dict[str, int]:
+    """Row counts after ETL — used to avoid sending empty first reports."""
+    sql = """
+        SELECT
+            (SELECT COUNT(*) FROM products WHERE store_id = %s) AS products,
+            (SELECT COUNT(*) FROM variants WHERE store_id = %s) AS variants,
+            (SELECT COUNT(*) FROM orders WHERE store_id = %s) AS orders;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, (store_id, store_id, store_id))
+        row = cursor.fetchone() or {}
+        return {
+            "products": int(row.get("products") or 0),
+            "variants": int(row.get("variants") or 0),
+            "orders": int(row.get("orders") or 0),
+        }
+
+
 def get_store_by_domain(shop_domain: str) -> dict | None:
     sql = """
         SELECT id,

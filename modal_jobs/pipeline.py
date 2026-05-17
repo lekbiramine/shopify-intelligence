@@ -52,6 +52,7 @@ def run_store_pipeline(shop_domain: str) -> None:
     setup_logging()
     logger = get_logger(__name__)
     normalized_domain = str(shop_domain or "").strip().lower()
+    os.environ.setdefault("PERSPICOR_LOGO_URL", "https://perspicor.com/perspicor-mark.png")
     logger.info("Modal pipeline started for %s", normalized_domain)
 
     try:

@@ -6,6 +6,9 @@ import re
 
 from reporting.advice_engine import get_action_advice
 
+# Public HTTPS asset for email clients (never use relative paths or SPA routes).
+DEFAULT_EMAIL_LOGO_URL = "https://perspicor.com/perspicor-mark.png"
+
 
 def _fmt_money(value: float | int | None) -> str:
     try:
@@ -177,8 +180,7 @@ def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) 
     store_name = escape(str(report_data.get("store_name") or "Perspicor"))
     date_text = escape(str(report_data.get("date") or ""))
     status_label, status_fg, status_bg = _status_badge(str(report_data.get("status") or "warning"))
-    # Must be an absolute public URL (email clients cannot load relative or local paths).
-    logo_src = (os.getenv("PERSPICOR_LOGO_URL") or "").strip() or "https://perspicor.com/perspicor-mark.png"
+    logo_src = (os.getenv("PERSPICOR_LOGO_URL") or "").strip() or DEFAULT_EMAIL_LOGO_URL
     footer_logo_html = (
         f"<img src=\"{escape(logo_src, quote=True)}\" alt=\"Perspicor\" width=\"28\" height=\"28\" "
         "style=\"display:block; margin:0 auto; height:28px; width:28px;\" />"
