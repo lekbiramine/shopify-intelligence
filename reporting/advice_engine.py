@@ -320,6 +320,75 @@ def get_action_advice(action_type: str, metrics: dict) -> dict:
             ),
         }
 
+    if normalized_type == "discount_overuse":
+        discount_rate = max(_to_float(m.get("discount_rate"), 0.0), 0.0)
+        discounted_orders = _to_int(m.get("discounted_orders"), 0)
+        total_orders = _to_int(m.get("total_orders"), 0)
+        total_discount_given = _to_float(m.get("total_discount_given"), 0.0)
+        avg_discount_amount = _to_float(m.get("avg_discount_amount"), 0.0)
+        most_used_code = _to_str(m.get("most_used_code"), "your top discount code")
+        raw_store_aov = _to_float(m.get("store_aov"), 0.0)
+        store_aov = raw_store_aov if raw_store_aov > 0 else 35.00
+        return {
+            "headline": (
+                f"{discount_rate * 100:.1f}% of your orders used a "
+                "discount code — you trained your customers to "
+                "never pay full price"
+            ),
+            "context": (
+                f"You gave away ${total_discount_given:.2f} in discounts "
+                "this month alone. Hormozi's core pricing principle: "
+                "every time you discount, you teach your customer that "
+                f"your full price is a lie. At {discount_rate * 100:.1f}% "
+                f"discount rate, {discounted_orders} out of your last "
+                f"{total_orders} customers paid less than your product "
+                "is worth. This compounds — next month that rate will "
+                "be higher unless you act."
+            ),
+            "playbook": [
+                (
+                    f"Retire '{most_used_code}' immediately. Replace it "
+                    "with a value-based offer: free shipping on orders "
+                    "over $X, a free gift with purchase, or early access "
+                    "to new products. Same perceived value, zero margin "
+                    "destruction."
+                ),
+                (
+                    "Introduce a loyalty program instead of open discounts. "
+                    "'Buy 3 times, get 15% off forever' is a reward for "
+                    "loyalty. A public discount code is a reward for "
+                    "being a first-time buyer who found a coupon site."
+                ),
+                (
+                    f"Email your {discounted_orders} discount buyers "
+                    "personally. Tell them you're retiring the code but "
+                    "they're getting something better — a loyalty reward "
+                    "or exclusive access. Most will stay. The ones who "
+                    "leave only came for the discount anyway."
+                ),
+                (
+                    "Run a 30-day no-discount experiment on your top "
+                    "product. Raise the price by the average discount "
+                    f"amount (${avg_discount_amount:.2f}) and see if "
+                    "conversion drops more than 15%. If not, you've "
+                    "permanently recovered that margin."
+                ),
+            ],
+            "benchmark": (
+                "Shopify stores with discount rates above 30% "
+                "average 40% lower customer LTV compared to stores "
+                "that use value-based offers. Discount addiction is "
+                "the #1 silent margin killer in e-commerce."
+            ),
+            "urgency": (
+                f"At your current discount rate, you will give away "
+                f"${total_discount_given * 12:.2f} in discounts over "
+                "the next 12 months. That money could fund "
+                f"{_safe_int_div(total_discount_given * 12, store_aov, 0):.0f} "
+                "new customer acquisitions instead."
+            ),
+        }
+
     if normalized_type in {"low_margin_products_selling_high", "low_margin_products"}:
         product_name = _to_str(m.get("product_name"), "This product")
         units_sold = _to_int(m.get("units_sold"), 0)

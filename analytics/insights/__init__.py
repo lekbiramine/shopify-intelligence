@@ -9,6 +9,7 @@ from analytics.insights.insight_low_repeat_purchase_rate import run_insight as r
 from analytics.insights.insight_high_value_customer_at_risk import run_insight as run_high_value_customer_at_risk_insight
 from analytics.insights.insight_abandoned_checkout_spike import run_insight as run_abandoned_checkout_spike_insight
 from analytics.insights.insight_low_margin_products import run_insight as run_low_margin_products_insight
+from analytics.insights.insight_discount_overuse import run_insight as run_discount_overuse_insight
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from config import settings
@@ -239,18 +240,21 @@ def _build_signal_style_insight(signal: dict) -> dict:
         "high_value_customer_at_risk": "High-Value Customers At Risk",
         "abandoned_checkout_spike": "Abandoned Checkout Spike",
         "low_margin_products": "Low Margin Product",
+        "discount_overuse": "Discount Overuse",
     }
     severity_by_type = {
         "low_repeat_purchase_rate": "high",
         "high_value_customer_at_risk": "high",
         "abandoned_checkout_spike": "high",
         "low_margin_products": "medium",
+        "discount_overuse": "high",
     }
     impact_type_by_type = {
         "low_repeat_purchase_rate": "recoverable",
         "high_value_customer_at_risk": "risk",
         "abandoned_checkout_spike": "recoverable",
         "low_margin_products": "recoverable",
+        "discount_overuse": "recoverable",
     }
     targets = list(signal.get("targets") or [])
     exact_items: list[str] = []
@@ -272,6 +276,16 @@ def _build_signal_style_insight(signal: dict) -> dict:
                 price = float(target.get("price") or 0.0)
                 units = int(target.get("units_sold") or 0)
                 parts.append(f"price ${price:.2f} — units sold 90d {units}")
+            if action_type == "discount_overuse":
+                code = str(target.get("code") or "").strip()
+                usage = int(target.get("usage_count") or 0)
+                total_disc = float(target.get("total_discounted") or 0.0)
+                if code:
+                    parts.append(f"CODE {code}")
+                if usage:
+                    parts.append(f"USAGE {usage}")
+                if total_disc > 0:
+                    parts.append(f"DISCOUNTED ${total_disc:.2f}")
             exact_items.append(" — ".join(parts))
         else:
             text = str(target).strip()
@@ -326,6 +340,7 @@ def build_insights(store_id: int) -> list[dict]:
         run_high_value_customer_at_risk_insight,
         run_abandoned_checkout_spike_insight,
         run_low_margin_products_insight,
+        run_discount_overuse_insight,
     ]:
         extra = _run_new_insight_signal(store_id, fn)
         if extra:

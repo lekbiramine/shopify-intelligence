@@ -43,6 +43,7 @@ from analytics.insights.insight_low_repeat_purchase_rate import run_insight as r
 from analytics.insights.insight_high_value_customer_at_risk import run_insight as run_high_value_customer_at_risk_insight
 from analytics.insights.insight_abandoned_checkout_spike import run_insight as run_abandoned_checkout_spike_insight
 from analytics.insights.insight_low_margin_products import run_insight as run_low_margin_products_insight
+from analytics.insights.insight_discount_overuse import run_insight as run_discount_overuse_insight
 from reporting.email_sender import send_store_report_email
 from reporting.pdf_report_v2 import build_structured_actions
 from tasks.engine import (
@@ -75,6 +76,7 @@ REGISTERED_INSIGHT_ACTIONS = [
     "duplicate_orders",
     "revenue_concentration",
     "abnormal_discount",
+    "discount_overuse",
 ]
 
 REGISTERED_INSIGHT_ACTION_TYPES = frozenset(REGISTERED_INSIGHT_ACTIONS)
@@ -84,6 +86,7 @@ REGISTERED_INSIGHT_RUNNERS = (
     run_high_value_customer_at_risk_insight,
     run_abandoned_checkout_spike_insight,
     run_low_margin_products_insight,
+    run_discount_overuse_insight,
 )
 
 
@@ -109,6 +112,7 @@ def _log_all_registered_insight_signals(store_id: int) -> None:
         ("high_value_customer_at_risk", run_high_value_customer_at_risk_insight),
         ("abandoned_checkout_spike", run_abandoned_checkout_spike_insight),
         ("low_margin_products", run_low_margin_products_insight),
+        ("discount_overuse", run_discount_overuse_insight),
     ):
         with psycopg2.connect(
             host=settings.DB_HOST,
@@ -359,6 +363,8 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
             return "revenue_concentration"
         if ("abandon" in text and "checkout" in text) or ("abandoned" in text and "cart" in text):
             return "abandoned_checkout_spike"
+        if ("discount code" in text or "discount rate" in text) and "%" in diagnosis.lower():
+            return "discount_overuse"
         if "discount" in text and "order" in text:
             return "abnormal_discount"
         if "churn" in text or "inactive for 90" in text or "win-back" in text:
@@ -414,6 +420,9 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
 
             return {
                 "name": str(raw_target.get("name") or "").strip(),
+                "code": str(raw_target.get("code") or "").strip() or None,
+                "usage_count": _coerce_int(raw_target.get("usage_count")),
+                "total_discounted": _coerce_float(raw_target.get("total_discounted")),
                 "sku": str(raw_target.get("sku") or "N/A").strip() or "N/A",
                 "inventory": inv_coerced,
                 "sales_last_90d": raw_target.get("sales_last_90d") or raw_target.get("units_sold"),
@@ -503,6 +512,12 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
         spend_val = _strip_money(spend_conc_match)
         orders_conc = int(orders_conc_match.group(1)) if orders_conc_match else None
 
+        code_match = re.search(r"\bCODE\s+([A-Za-z0-9_\-]+)", text, flags=re.IGNORECASE)
+        usage_match = re.search(r"\bUSAGE\s+(\d+)", text, flags=re.IGNORECASE)
+        discounted_match = re.search(
+            r"\bDISCOUNTED\s+\$?\s*([\d,]+(?:\.\d+)?)", text, flags=re.IGNORECASE
+        )
+
         return {
             "name": name,
             "sku": sku,
@@ -521,6 +536,9 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
             ),
             "price": price_val,
             "units_sold": int(us_raw) if us_raw is not None else None,
+            "code": code_match.group(1).strip() if code_match else None,
+            "usage_count": int(usage_match.group(1)) if usage_match else None,
+            "total_discounted": _strip_money(discounted_match),
         }
 
     def _target_rows_from_insight_routing(route_key: str) -> list[dict]:
@@ -761,6 +779,32 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
                     "potential_revenue": float(potential_revenue),
                     "store_aov": store_aov,
                     "prev_week_abandonment_rate": float(prev_rate),
+                }
+            )
+        elif action_type == "discount_overuse":
+            prob_text = diagnosis or _problem_for_routing(summary, "discount_overuse")
+            m_rate = re.search(r"([\d.]+)%\s+of your orders", prob_text, re.I)
+            m_given = re.search(r"\$\s*([\d,]+(?:\.\d+)?)\s+in discounts", prob_text, re.I)
+            discount_rate = float(m_rate.group(1)) / 100.0 if m_rate else 0.0
+            total_discount_given = (
+                float(m_given.group(1).replace(",", "")) if m_given else float(weekly_value or 0.0)
+            )
+            discounted_orders = len(target_rows) if target_rows else 0
+            most_used_code = ""
+            if target_rows:
+                first = target_rows[0]
+                most_used_code = str(first.get("code") or first.get("sku") or "").strip()
+            metrics.update(
+                {
+                    "discount_rate": float(action.get("discount_rate", discount_rate) or discount_rate),
+                    "discounted_orders": int(action.get("discounted_orders", discounted_orders) or discounted_orders),
+                    "total_orders": int(action.get("total_orders", max(discounted_orders, 1)) or max(discounted_orders, 1)),
+                    "total_discount_given": float(
+                        action.get("total_discount_given", total_discount_given) or total_discount_given
+                    ),
+                    "avg_discount_amount": float(action.get("avg_discount_amount", 0) or 0),
+                    "most_used_code": str(action.get("most_used_code", most_used_code) or most_used_code),
+                    "store_aov": float(action.get("store_aov", store_aov) or store_aov or 35.0),
                 }
             )
         elif action_type == "low_margin_products":
