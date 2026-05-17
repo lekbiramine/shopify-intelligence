@@ -177,10 +177,11 @@ def build_html_report(report_data: dict, *, unsubscribe_url: str | None = None) 
     store_name = escape(str(report_data.get("store_name") or "Perspicor"))
     date_text = escape(str(report_data.get("date") or ""))
     status_label, status_fg, status_bg = _status_badge(str(report_data.get("status") or "warning"))
-    logo_src = (os.getenv("PERSPICOR_LOGO_URL") or "").strip() or "https://perspicor.com/logo/perspicor-dark.png"
+    # Must be an absolute public URL (email clients cannot load relative or local paths).
+    logo_src = (os.getenv("PERSPICOR_LOGO_URL") or "").strip() or "https://perspicor.com/perspicor-mark.png"
     footer_logo_html = (
-        f"<img src=\"{escape(logo_src, quote=True)}\" alt=\"Perspicor\" "
-        "style=\"display:block; margin:0 auto; height:28px; width:auto;\" />"
+        f"<img src=\"{escape(logo_src, quote=True)}\" alt=\"Perspicor\" width=\"28\" height=\"28\" "
+        "style=\"display:block; margin:0 auto; height:28px; width:28px;\" />"
         if logo_src
         else "<div style=\"color:#141423; font-size:18px; font-weight:700; letter-spacing:0.3px;\">Perspicor</div>"
     )
