@@ -40,7 +40,11 @@
       "destination": "/api/index"
     },
     {
-      "source": "/oauth/:path*",
+      "source": "/oauth/callback",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/oauth/install",
       "destination": "/api/index"
     },
     {

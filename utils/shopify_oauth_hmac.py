@@ -11,6 +11,9 @@ from config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Not part of Shopify OAuth; injected by Vercel rewrites (e.g. /oauth/:path* → /api/index).
+_HMAC_EXCLUDED_KEYS = frozenset({"hmac", "signature", "path"})
+
 
 def shopify_client_secret() -> str:
     return (os.getenv("SHOPIFY_API_SECRET") or "").strip()
@@ -25,10 +28,9 @@ def _oauth_message_from_pairs(pairs: list[tuple[str, str]]) -> tuple[str, str]:
     hmac_received = ""
     filtered: list[tuple[str, str]] = []
     for key, value in pairs:
-        if key == "hmac":
-            hmac_received = (value or "").strip()
-            continue
-        if key == "signature":
+        if key in _HMAC_EXCLUDED_KEYS:
+            if key == "hmac":
+                hmac_received = (value or "").strip()
             continue
         filtered.append((key, value))
 

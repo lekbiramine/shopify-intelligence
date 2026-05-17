@@ -54,6 +54,21 @@ def test_verify_oauth_callback_hmac_accepts_urlencoded_state():
     assert verify_oauth_callback_hmac(request, secret=secret) is True
 
 
+def test_verify_oauth_callback_hmac_ignores_vercel_path_query_param():
+    secret = "shpss_test_secret"
+    params = {
+        "code": "oauth_code_123",
+        "shop": "isaac-998084671.myshopify.com",
+        "state": "isaac-998084671.myshopify.com|nonce|1710000000|abcdef",
+        "timestamp": "1710000000",
+        "host": "YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvaXNhYWMtOTk4MDg0Njcx",
+    }
+    digest = _sign(secret, params)
+    query = urlencode(params) + f"&hmac={digest}&path=callback"
+    request = _request_for_query(query)
+    assert verify_oauth_callback_hmac(request, secret=secret) is True
+
+
 def test_verify_oauth_callback_hmac_rejects_wrong_secret():
     params = {
         "code": "oauth_code_123",
