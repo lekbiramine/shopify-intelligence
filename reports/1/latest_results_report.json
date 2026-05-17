@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-08T11:16:48.964185+00:00",
+  "generated_at": "2026-05-17T15:44:07.813284+00:00",
   "headline": {
     "primary": "NO ACTIVE STORE LOSS DETECTED TODAY",
     "secondary": "$0.00/day is currently being lost due to unresolved store issues"
@@ -36,26 +36,26 @@
   "final_warning": "Continued inaction will maintain the current loss rate.",
   "daily_delta": {
     "revenue_change": 0.0,
-    "loss_change": -56121.31,
-    "risk_change": -56121.31
+    "loss_change": 0.0,
+    "risk_change": 0.0
   },
-  "trend_state": "improving",
+  "trend_state": "baseline (first tracking day)",
   "daily_insight": {
-    "message": "Store loss decreased by $56121.31 versus yesterday.",
-    "key_change": "Loss pressure improved today."
+    "message": "Baseline established. Future reports will track performance changes.",
+    "key_change": "Baseline established. Future reports will track performance changes."
   },
   "daily_comparison": {
-    "title": "DAILY CHANGE vs YESTERDAY",
-    "loss_change_line": "-$56121.31 change in loss",
-    "revenue_change_line": "$0.00 change in revenue recovery",
-    "continuity_memory": "Comparing today against previous day performance",
-    "baseline_mode": false
+    "title": "First tracking day \u2014 baseline established",
+    "loss_change_line": "",
+    "revenue_change_line": "",
+    "continuity_memory": "First tracking day \u2014 baseline established",
+    "baseline_mode": true
   },
-  "continuity_memory": "Comparing today against previous day performance",
+  "continuity_memory": "First tracking day \u2014 baseline established",
   "report_contract": {
     "metadata": {
       "store_id": "1",
-      "generated_at": "2026-05-08T11:16:48.964185+00:00",
+      "generated_at": "2026-05-17T15:44:07.813284+00:00",
       "status": "healthy"
     },
     "financials": {
@@ -123,7 +123,7 @@
       "ignored_at": null,
       "impact_realized_24h": 0.0,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-08T11:16:48.964081+00:00"
+      "last_verification_at": "2026-05-17T15:44:07.813191+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -135,7 +135,7 @@
       "ignored_at": null,
       "impact_realized_24h": 0.0,
       "impact_realized_7d": 0.0,
-      "last_verification_at": "2026-05-08T11:16:29.953142+00:00"
+      "last_verification_at": "2026-05-17T15:43:48.061674+00:00"
     },
     "action_3": {
       "action_id": "action_3",
