@@ -44,7 +44,7 @@
       "ignored_at": null,
       "impact_realized_24h": 53.84,
       "impact_realized_7d": 376.9,
-      "last_verification_at": "2026-05-17T18:54:14.385055+00:00"
+      "last_verification_at": "2026-05-18T09:42:43.745349+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -56,7 +56,7 @@
       "ignored_at": null,
       "impact_realized_24h": 53.84,
       "impact_realized_7d": 376.9,
-      "last_verification_at": "2026-05-17T18:53:50.729302+00:00"
+      "last_verification_at": "2026-05-18T09:42:43.745255+00:00"
     },
     "action_3": {
       "action_id": "action_3",
@@ -173,22 +173,22 @@
   ],
   "score_feedback": {
     "operations:high-value customers at risk": {
-      "multiplier": 0.8636,
+      "multiplier": 0.812,
       "last_realized_7d": 376.9,
       "last_expected_7d": 11129.79,
-      "updated_at": "2026-05-17T18:54:14.385121+00:00"
+      "updated_at": "2026-05-18T09:42:43.745314+00:00"
     },
     "inventory:clear dead inventory via discount and bundling": {
-      "multiplier": 0.8933,
+      "multiplier": 0.856,
       "last_realized_7d": 376.9,
-      "last_expected_7d": 60432.6,
-      "updated_at": "2026-05-07T17:18:00.062572+00:00"
+      "last_expected_7d": 32757.6,
+      "updated_at": "2026-05-18T09:42:43.745373+00:00"
     },
     "conversion:abandoned checkout spike": {
-      "multiplier": 0.945,
+      "multiplier": 0.901,
       "last_realized_7d": 376.9,
       "last_expected_7d": 9058.61,
-      "updated_at": "2026-05-17T18:53:50.729354+00:00"
+      "updated_at": "2026-05-17T22:22:26.865185+00:00"
     }
   }
 }

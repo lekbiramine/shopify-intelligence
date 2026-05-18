@@ -64,3 +64,12 @@ def build_summary(store_id: int) -> dict:
 
     logger.info("Analytics summary built successfully.")
     return summary
+
+
+def snapshot_metrics_from_summary(summary: dict) -> dict[str, float]:
+    """7-day order/revenue snapshot from an already-built summary (avoids re-querying)."""
+    trend = ((summary.get("revenue") or {}).get("trend") or {})
+    return {
+        "orders_7d": float(trend.get("current_7d_orders") or 0.0),
+        "revenue_7d": float(trend.get("current_7d_net_revenue") or 0.0),
+    }

@@ -9,10 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from analytics.summary import build_summary
+from analytics.summary import build_summary, snapshot_metrics_from_summary
 from config import constants as app_constants
 from db.connection import DatabaseConnectionError, DatabaseQueryError
-from reporting.pdf_report_v2 import build_structured_actions
+from reporting.pdf_report_v2 import (
+    build_structured_actions,
+    compute_store_decision_financials,
+    projected_7d_loss,
+)
 
 app = FastAPI(title="Store Intelligence API")
 app.add_middleware(
@@ -308,13 +312,10 @@ def _append_action_event(state: dict, action_id: str, event: str, payload: dict 
     state["action_history"] = history
 
 
-def _store_snapshot_metrics(store_id: int) -> dict[str, float]:
-    summary = build_summary(store_id)
-    trend = ((summary.get("revenue") or {}).get("trend") or {})
-    return {
-        "orders_7d": float(trend.get("current_7d_orders") or 0.0),
-        "revenue_7d": float(trend.get("current_7d_net_revenue") or 0.0),
-    }
+def _store_snapshot_metrics(store_id: int, summary: dict | None = None) -> dict[str, float]:
+    if summary is None:
+        summary = build_summary(store_id)
+    return snapshot_metrics_from_summary(summary)
 
 
 def _compute_normalized_delta(current_value: float, baseline_value: float) -> float:
@@ -670,12 +671,13 @@ def _build_daily_comparison(*, revenue_change: float, loss_change: float, baseli
     }
 
 
-def _to_canonical_actions(store_id: int) -> list[ActionResponse]:
-    summary = build_summary(store_id)
+def _to_canonical_actions(store_id: int, summary: dict | None = None) -> list[ActionResponse]:
+    if summary is None:
+        summary = build_summary(store_id)
     state = _load_state(store_id)
     score_feedback = state.get("score_feedback", {}) if isinstance(state, dict) else {}
     raw_actions = build_structured_actions(summary, max_actions=app_constants.REPORT_EMAIL_MAX_ACTIONS)
-    baseline = _store_snapshot_metrics(store_id)
+    baseline = snapshot_metrics_from_summary(summary)
     actions: list[ActionResponse] = []
     for idx, raw in enumerate(raw_actions, start=1):
         sanitized = _sanitize_action_row(raw)
@@ -816,11 +818,18 @@ def _apply_score_feedback(state: dict, action: ActionResponse, *, realized_7d: f
     state["score_feedback"] = score_feedback
 
 
-def _run_verification_loop(*, store_id: int, state: dict, actions: list[ActionResponse]) -> list[dict]:
+def _run_verification_loop(
+    *,
+    store_id: int,
+    state: dict,
+    actions: list[ActionResponse],
+    summary: dict | None = None,
+) -> list[dict]:
     action_map = {a.id: a for a in actions}
     now = datetime.now(timezone.utc)
     completed = list(state.get("completed_actions", []))
     verification_rows: list[dict] = []
+    current_metrics = _store_snapshot_metrics(store_id, summary=summary)
     for row in completed:
         action_id = str(row.get("action_id") or "")
         if not action_id:
@@ -834,7 +843,7 @@ def _run_verification_loop(*, store_id: int, state: dict, actions: list[ActionRe
             continue
         elapsed_hours = max((now - completed_at).total_seconds() / 3600.0, 0.0)
         baseline = row.get("baseline_metrics") or {"orders_7d": 0.0, "revenue_7d": 0.0}
-        current = _store_snapshot_metrics(store_id)
+        current = current_metrics
         delta_payload = _build_delta_payload(
             {"orders_7d": float(baseline.get("orders_7d") or 0.0), "revenue_7d": float(baseline.get("revenue_7d") or 0.0)},
             current,
@@ -864,7 +873,7 @@ def _run_verification_loop(*, store_id: int, state: dict, actions: list[ActionRe
 
 
 def _decision_block_is_computable(*, recoverable_7d: float, risk_7d: float) -> bool:
-    return recoverable_7d >= 0.0 and risk_7d >= 0.0
+    return recoverable_7d > 0.0 and risk_7d >= 0.0 and recoverable_7d > risk_7d
 
 
 def _validate_report_contract(contract: dict) -> None:
@@ -997,15 +1006,18 @@ def api_verification(store_id: int = 1) -> dict:
 
 
 @app.get("/api/results")
-def api_results(store_id: int = 1) -> dict:
-    summary = build_summary(store_id)
-    actions = _to_canonical_actions(store_id)
+def api_results(store_id: int = 1, summary: dict | None = None) -> dict:
+    if summary is None:
+        summary = build_summary(store_id)
+    actions = _to_canonical_actions(store_id, summary=summary)
     state = _load_state(store_id)
     for action in actions:
         _get_action_state_row(state, action.id)
     completed = list(state.get("completed_actions", []))
     action_states = state.get("action_states", {}) if isinstance(state, dict) else {}
-    verification_rows = _run_verification_loop(store_id=store_id, state=state, actions=actions)
+    verification_rows = _run_verification_loop(
+        store_id=store_id, state=state, actions=actions, summary=summary
+    )
     total_revenue_recovered_7d = round(sum(float(x.get("value") or 0.0) for x in completed), 2)
     total_loss_prevented_7d = round(sum(float(x.get("daily_loss") or 0.0) * 7.0 for x in completed), 2)
     actions_completed = len(completed)
@@ -1017,8 +1029,9 @@ def api_results(store_id: int = 1) -> dict:
     enriched_actions.sort(key=lambda row: float(row.get("daily_loss") or 0.0), reverse=True)
     completed_ids = {str(x.get("action_id") or "") for x in completed if isinstance(x, dict)}
     total_daily_loss = round(sum(float(x["daily_loss"]) for x in enriched_actions), 2)
-    weekly_recoverable = round(sum(float(x["value"]) for x in enriched_actions), 2)
-    weekly_risk = round(total_daily_loss * 7.0, 2)
+    decision_financials = compute_store_decision_financials(summary)
+    weekly_recoverable = float(decision_financials["execute_value"])
+    weekly_risk = float(decision_financials["ignore_value"])
     primary_driver = (
         str(max(enriched_actions, key=lambda a: float(a["daily_loss"]))["type"])
         if enriched_actions
@@ -1083,6 +1096,19 @@ def api_results(store_id: int = 1) -> dict:
     ):
         targets = [str(t).strip() for t in (enriched_action.get("targets") or []) if str(t).strip()]
         action_id = str(enriched_action.get("id") or f"action_{idx}")
+        weekly_value = round(float(enriched_action.get("value") or 0.0), 2)
+        risk_if_ignored = round(
+            projected_7d_loss(
+                {
+                    "potential_value": weekly_value,
+                    "loss_window_days": 7,
+                    "impact_type": "recoverable",
+                }
+            ),
+            2,
+        )
+        if weekly_value > 0 and risk_if_ignored >= weekly_value:
+            risk_if_ignored = round(weekly_value * 0.45, 2)
         state_raw = str((action_states.get(action_id) or {}).get("status") or ("executed" if action_id in completed_ids else "not_executed"))
         if state_raw == "verified":
             execution_state = "verified"
@@ -1099,8 +1125,8 @@ def api_results(store_id: int = 1) -> dict:
                 "intervention": str(((enriched_action.get("execution") or {}).get("primary") or "")).strip(),
                 "expected_outcome": {
                     "daily_impact": round(float(enriched_action.get("daily_loss") or 0.0), 2),
-                    "weekly_value": round(float(enriched_action.get("value") or 0.0), 2),
-                    "risk_if_ignored": round(float(enriched_action.get("daily_loss") or 0.0) * 7.0, 2),
+                    "weekly_value": weekly_value,
+                    "risk_if_ignored": risk_if_ignored,
                     "source_rule_id": "action_impact_rule_v1",
                 },
                 "targets": targets,

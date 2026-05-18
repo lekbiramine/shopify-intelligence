@@ -10,6 +10,22 @@ from analytics.insights.insight_high_value_customer_at_risk import run_insight a
 from analytics.insights.insight_abandoned_checkout_spike import run_insight as run_abandoned_checkout_spike_insight
 from analytics.insights.insight_low_margin_products import run_insight as run_low_margin_products_insight
 from analytics.insights.insight_discount_overuse import run_insight as run_discount_overuse_insight
+from analytics.insights.insight_no_post_purchase_upsell import run_insight as run_no_post_purchase_upsell_insight
+from analytics.insights.insight_no_email_automation_flows import run_insight as run_no_email_automation_flows_insight
+from analytics.insights.insight_low_aov_no_bundle_strategy import run_insight as run_low_aov_no_bundle_strategy_insight
+from analytics.insights.insight_single_product_revenue_concentration import (
+    run_insight as run_single_product_revenue_concentration_insight,
+)
+from analytics.insights.insight_no_subscription_revenue import run_insight as run_no_subscription_revenue_insight
+from analytics.insights.insight_high_single_order_customer_ratio import (
+    run_insight as run_high_single_order_customer_ratio_insight,
+)
+from analytics.insights.insight_pricing_below_market import run_insight as run_pricing_below_market_insight
+from analytics.insights.insight_review_count_too_low import run_insight as run_review_count_too_low_insight
+from analytics.insights.insight_cart_abandonment_no_recovery import (
+    run_insight as run_cart_abandonment_no_recovery_insight,
+)
+from analytics.insights.insight_no_loyalty_program import run_insight as run_no_loyalty_program_insight
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from config import settings
@@ -39,6 +55,7 @@ def _build_insight(
     time_required_minutes: int | None = None,
     loss_window_days: int | None = None,
     routing_type: str | None = None,
+    metrics: dict | None = None,
 ) -> dict:
     return {
         "category": category,
@@ -61,6 +78,7 @@ def _build_insight(
         "time_required_minutes": int(time_required_minutes) if time_required_minutes is not None else None,
         "loss_window_days": int(loss_window_days) if loss_window_days is not None else None,
         "routing_type": (routing_type or "").strip().lower() or None,
+        "metrics": dict(metrics or {}),
     }
 
 
@@ -241,6 +259,16 @@ def _build_signal_style_insight(signal: dict) -> dict:
         "abandoned_checkout_spike": "Abandoned Checkout Spike",
         "low_margin_products": "Low Margin Product",
         "discount_overuse": "Discount Overuse",
+        "no_post_purchase_upsell": "No Post-Purchase Upsell",
+        "no_email_automation_flows": "No Email Automation Flows",
+        "low_aov_no_bundle_strategy": "Low AOV — No Bundle Strategy",
+        "single_product_revenue_concentration": "Single-Product Revenue Concentration",
+        "no_subscription_revenue": "No Subscription Revenue",
+        "high_single_order_customer_ratio": "High Single-Order Customer Ratio",
+        "pricing_below_market": "Pricing Below Market",
+        "review_count_too_low": "Review Count Too Low",
+        "cart_abandonment_no_recovery": "Cart Abandonment — No Recovery",
+        "no_loyalty_program": "No Loyalty Program",
     }
     severity_by_type = {
         "low_repeat_purchase_rate": "high",
@@ -248,6 +276,16 @@ def _build_signal_style_insight(signal: dict) -> dict:
         "abandoned_checkout_spike": "high",
         "low_margin_products": "medium",
         "discount_overuse": "high",
+        "no_post_purchase_upsell": "high",
+        "no_email_automation_flows": "high",
+        "low_aov_no_bundle_strategy": "high",
+        "single_product_revenue_concentration": "high",
+        "no_subscription_revenue": "high",
+        "high_single_order_customer_ratio": "high",
+        "pricing_below_market": "medium",
+        "review_count_too_low": "medium",
+        "cart_abandonment_no_recovery": "high",
+        "no_loyalty_program": "medium",
     }
     impact_type_by_type = {
         "low_repeat_purchase_rate": "recoverable",
@@ -255,6 +293,16 @@ def _build_signal_style_insight(signal: dict) -> dict:
         "abandoned_checkout_spike": "recoverable",
         "low_margin_products": "recoverable",
         "discount_overuse": "recoverable",
+        "no_post_purchase_upsell": "recoverable",
+        "no_email_automation_flows": "recoverable",
+        "low_aov_no_bundle_strategy": "recoverable",
+        "single_product_revenue_concentration": "risk",
+        "no_subscription_revenue": "recoverable",
+        "high_single_order_customer_ratio": "recoverable",
+        "pricing_below_market": "recoverable",
+        "review_count_too_low": "recoverable",
+        "cart_abandonment_no_recovery": "recoverable",
+        "no_loyalty_program": "recoverable",
     }
     targets = list(signal.get("targets") or [])
     exact_items: list[str] = []
@@ -307,6 +355,7 @@ def _build_signal_style_insight(signal: dict) -> dict:
         time_required_minutes=20,
         loss_window_days=7,
         routing_type=str(action_type or "").strip().lower() or None,
+        metrics=dict(signal.get("metrics") or {}),
     )
 
 
@@ -341,6 +390,16 @@ def build_insights(store_id: int) -> list[dict]:
         run_abandoned_checkout_spike_insight,
         run_low_margin_products_insight,
         run_discount_overuse_insight,
+        run_no_post_purchase_upsell_insight,
+        run_no_email_automation_flows_insight,
+        run_low_aov_no_bundle_strategy_insight,
+        run_single_product_revenue_concentration_insight,
+        run_no_subscription_revenue_insight,
+        run_high_single_order_customer_ratio_insight,
+        run_pricing_below_market_insight,
+        run_review_count_too_low_insight,
+        run_cart_abandonment_no_recovery_insight,
+        run_no_loyalty_program_insight,
     ]:
         extra = _run_new_insight_signal(store_id, fn)
         if extra:

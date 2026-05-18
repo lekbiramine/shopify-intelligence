@@ -44,6 +44,22 @@ from analytics.insights.insight_high_value_customer_at_risk import run_insight a
 from analytics.insights.insight_abandoned_checkout_spike import run_insight as run_abandoned_checkout_spike_insight
 from analytics.insights.insight_low_margin_products import run_insight as run_low_margin_products_insight
 from analytics.insights.insight_discount_overuse import run_insight as run_discount_overuse_insight
+from analytics.insights.insight_no_post_purchase_upsell import run_insight as run_no_post_purchase_upsell_insight
+from analytics.insights.insight_no_email_automation_flows import run_insight as run_no_email_automation_flows_insight
+from analytics.insights.insight_low_aov_no_bundle_strategy import run_insight as run_low_aov_no_bundle_strategy_insight
+from analytics.insights.insight_single_product_revenue_concentration import (
+    run_insight as run_single_product_revenue_concentration_insight,
+)
+from analytics.insights.insight_no_subscription_revenue import run_insight as run_no_subscription_revenue_insight
+from analytics.insights.insight_high_single_order_customer_ratio import (
+    run_insight as run_high_single_order_customer_ratio_insight,
+)
+from analytics.insights.insight_pricing_below_market import run_insight as run_pricing_below_market_insight
+from analytics.insights.insight_review_count_too_low import run_insight as run_review_count_too_low_insight
+from analytics.insights.insight_cart_abandonment_no_recovery import (
+    run_insight as run_cart_abandonment_no_recovery_insight,
+)
+from analytics.insights.insight_no_loyalty_program import run_insight as run_no_loyalty_program_insight
 from reporting.email_sender import send_store_report_email
 from reporting.pdf_report_v2 import build_structured_actions
 from tasks.engine import (
@@ -77,6 +93,16 @@ REGISTERED_INSIGHT_ACTIONS = [
     "revenue_concentration",
     "abnormal_discount",
     "discount_overuse",
+    "no_post_purchase_upsell",
+    "no_email_automation_flows",
+    "low_aov_no_bundle_strategy",
+    "single_product_revenue_concentration",
+    "no_subscription_revenue",
+    "high_single_order_customer_ratio",
+    "pricing_below_market",
+    "review_count_too_low",
+    "cart_abandonment_no_recovery",
+    "no_loyalty_program",
 ]
 
 REGISTERED_INSIGHT_ACTION_TYPES = frozenset(REGISTERED_INSIGHT_ACTIONS)
@@ -87,6 +113,16 @@ REGISTERED_INSIGHT_RUNNERS = (
     run_abandoned_checkout_spike_insight,
     run_low_margin_products_insight,
     run_discount_overuse_insight,
+    run_no_post_purchase_upsell_insight,
+    run_no_email_automation_flows_insight,
+    run_low_aov_no_bundle_strategy_insight,
+    run_single_product_revenue_concentration_insight,
+    run_no_subscription_revenue_insight,
+    run_high_single_order_customer_ratio_insight,
+    run_pricing_below_market_insight,
+    run_review_count_too_low_insight,
+    run_cart_abandonment_no_recovery_insight,
+    run_no_loyalty_program_insight,
 )
 
 
@@ -113,6 +149,16 @@ def _log_all_registered_insight_signals(store_id: int) -> None:
         ("abandoned_checkout_spike", run_abandoned_checkout_spike_insight),
         ("low_margin_products", run_low_margin_products_insight),
         ("discount_overuse", run_discount_overuse_insight),
+        ("no_post_purchase_upsell", run_no_post_purchase_upsell_insight),
+        ("no_email_automation_flows", run_no_email_automation_flows_insight),
+        ("low_aov_no_bundle_strategy", run_low_aov_no_bundle_strategy_insight),
+        ("single_product_revenue_concentration", run_single_product_revenue_concentration_insight),
+        ("no_subscription_revenue", run_no_subscription_revenue_insight),
+        ("high_single_order_customer_ratio", run_high_single_order_customer_ratio_insight),
+        ("pricing_below_market", run_pricing_below_market_insight),
+        ("review_count_too_low", run_review_count_too_low_insight),
+        ("cart_abandonment_no_recovery", run_cart_abandonment_no_recovery_insight),
+        ("no_loyalty_program", run_no_loyalty_program_insight),
     ):
         with psycopg2.connect(
             host=settings.DB_HOST,
@@ -284,6 +330,18 @@ def _assert_store_report_delivery_scope(*, store_id: int, report_path: str, reci
         raise RuntimeError(f"Report path is not store-scoped: {report_path}")
 
 
+def _insight_metrics_from_summary(summary: dict, routing_slug: str) -> dict:
+    slug = routing_slug.strip().lower()
+    for ins in summary.get("insights") or []:
+        if str(ins.get("routing_type") or "").strip().lower() != slug:
+            continue
+        raw = ins.get("metrics")
+        if isinstance(raw, dict):
+            return dict(raw)
+        break
+    return {}
+
+
 def _problem_for_routing(summary: dict, routing_slug: str) -> str:
     slug = routing_slug.strip().lower()
     for ins in summary.get("insights") or []:
@@ -361,6 +419,26 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
             return "high_value_customer_at_risk"
         if "loyal revenue" in text and "top 2" in text:
             return "revenue_concentration"
+        if "post-purchase upsell" in text or "single-line orders" in text:
+            return "no_post_purchase_upsell"
+        if "win-back" in text and "email flow" in text:
+            return "no_email_automation_flows"
+        if "bundle strategy" in text or ("aov" in text and "items/order" in text):
+            return "low_aov_no_bundle_strategy"
+        if "concentration" in text and "single product" in text:
+            return "single_product_revenue_concentration"
+        if "subscription" in text and "repeat" in text:
+            return "no_subscription_revenue"
+        if "acquisition treadmill" in text or "one-time buyers" in text and "70" in diagnosis:
+            return "high_single_order_customer_ratio"
+        if "under $15" in text or "undercharging" in text:
+            return "pricing_below_market"
+        if "review collection" in text or "systematic review" in text:
+            return "review_count_too_low"
+        if "cart recovery" in text or ("abandoned" in text and "recovery sequence" in text):
+            return "cart_abandonment_no_recovery"
+        if "loyalty program" in text or "loyalty discount pattern" in text:
+            return "no_loyalty_program"
         if ("abandon" in text and "checkout" in text) or ("abandoned" in text and "cart" in text):
             return "abandoned_checkout_spike"
         if ("discount code" in text or "discount rate" in text) and "%" in diagnosis.lower():
@@ -807,6 +885,129 @@ def _build_email_report_data(*, store_id: int, report_payload: dict, summary: di
                     "store_aov": float(action.get("store_aov", store_aov) or store_aov or 35.0),
                 }
             )
+        elif action_type == "no_post_purchase_upsell":
+            im = _insight_metrics_from_summary(summary, "no_post_purchase_upsell")
+            metrics.update(
+                {
+                    "total_orders": int(im.get("total_orders") or 0),
+                    "avg_items_per_order": float(im.get("avg_items_per_order") or 0.0),
+                    "store_aov": float(im.get("store_aov") or store_aov or 35.0),
+                    "monthly_revenue": float(im.get("monthly_revenue") or 0.0),
+                    "upsell_opportunity": float(
+                        im.get("upsell_opportunity") or float(im.get("monthly_revenue") or 0.0) * 0.15
+                    ),
+                }
+            )
+        elif action_type == "no_email_automation_flows":
+            im = _insight_metrics_from_summary(summary, "no_email_automation_flows")
+            one_time = int(im.get("one_time_buyers") or 0)
+            aov = float(im.get("store_aov") or store_aov or 35.0)
+            metrics.update(
+                {
+                    "total_customers": int(im.get("total_customers") or 0),
+                    "one_time_buyers": one_time,
+                    "repeat_rate": float(im.get("repeat_rate") or 0.0),
+                    "store_aov": aov,
+                    "winback_opportunity": float(im.get("winback_opportunity") or one_time * aov * 0.08),
+                }
+            )
+        elif action_type == "low_aov_no_bundle_strategy":
+            im = _insight_metrics_from_summary(summary, "low_aov_no_bundle_strategy")
+            monthly = float(im.get("monthly_revenue") or 0.0)
+            metrics.update(
+                {
+                    "store_aov": float(im.get("store_aov") or store_aov or 35.0),
+                    "total_orders": int(im.get("total_orders") or 0),
+                    "monthly_revenue": monthly,
+                    "bundle_opportunity": float(im.get("bundle_opportunity") or monthly * 0.20),
+                }
+            )
+        elif action_type == "single_product_revenue_concentration":
+            im = _insight_metrics_from_summary(summary, "single_product_revenue_concentration")
+            first = target_rows[0] if target_rows else {}
+            metrics.update(
+                {
+                    "top_product_name": str(im.get("top_product_name") or first.get("name") or "Top product"),
+                    "top_product_revenue_share": float(im.get("top_product_revenue_share") or 0.0),
+                    "top_product_revenue": float(im.get("top_product_revenue") or 0.0),
+                    "total_revenue": float(im.get("total_revenue") or 0.0),
+                    "store_aov": float(im.get("store_aov") or store_aov or 35.0),
+                }
+            )
+        elif action_type == "no_subscription_revenue":
+            im = _insight_metrics_from_summary(summary, "no_subscription_revenue")
+            monthly = float(im.get("monthly_revenue") or 0.0)
+            metrics.update(
+                {
+                    "repeat_rate": float(im.get("repeat_rate") or 0.0),
+                    "total_repeat_orders": int(im.get("total_repeat_orders") or 0),
+                    "store_aov": float(im.get("store_aov") or store_aov or 35.0),
+                    "monthly_revenue": monthly,
+                    "subscription_opportunity": float(im.get("subscription_opportunity") or monthly * 0.25),
+                }
+            )
+        elif action_type == "high_single_order_customer_ratio":
+            im = _insight_metrics_from_summary(summary, "high_single_order_customer_ratio")
+            aov = float(im.get("store_aov") or store_aov or 35.0)
+            metrics.update(
+                {
+                    "one_time_buyers": int(im.get("one_time_buyers") or 0),
+                    "total_customers": int(im.get("total_customers") or 0),
+                    "one_time_ratio": float(im.get("one_time_ratio") or 0.0),
+                    "store_aov": aov,
+                    "ltv_gap": float(im.get("ltv_gap") or aov * 3.0),
+                    "actual_avg_ltv": float(im.get("actual_avg_ltv") or 0.0),
+                }
+            )
+        elif action_type == "pricing_below_market":
+            im = _insight_metrics_from_summary(summary, "pricing_below_market")
+            total_rev = float(im.get("total_revenue") or 0.0)
+            metrics.update(
+                {
+                    "avg_product_price": float(im.get("avg_product_price") or 0.0),
+                    "low_price_revenue_share": float(im.get("low_price_revenue_share") or 0.0),
+                    "store_aov": float(im.get("store_aov") or store_aov or 35.0),
+                    "total_revenue": total_rev,
+                    "price_increase_opportunity": float(im.get("price_increase_opportunity") or total_rev * 0.15),
+                }
+            )
+        elif action_type == "review_count_too_low":
+            im = _insight_metrics_from_summary(summary, "review_count_too_low")
+            monthly = float(im.get("monthly_revenue") or 0.0)
+            metrics.update(
+                {
+                    "total_orders": int(im.get("total_orders") or 0),
+                    "store_aov": float(im.get("store_aov") or store_aov or 35.0),
+                    "monthly_revenue": monthly,
+                    "review_opportunity": float(im.get("review_opportunity") or monthly * 0.12),
+                }
+            )
+        elif action_type == "cart_abandonment_no_recovery":
+            im = _insight_metrics_from_summary(summary, "cart_abandonment_no_recovery")
+            abandoned = int(im.get("abandoned_count") or 0)
+            aov = float(im.get("store_aov") or store_aov or 35.0)
+            metrics.update(
+                {
+                    "abandoned_count": abandoned,
+                    "abandonment_rate": float(im.get("abandonment_rate") or 0.0),
+                    "store_aov": aov,
+                    "potential_recovery": float(im.get("potential_recovery") or abandoned * aov * 0.15),
+                    "weekly_loss": float(im.get("weekly_loss") or abandoned * aov),
+                }
+            )
+        elif action_type == "no_loyalty_program":
+            im = _insight_metrics_from_summary(summary, "no_loyalty_program")
+            monthly = float(im.get("monthly_revenue") or 0.0)
+            metrics.update(
+                {
+                    "repeat_rate": float(im.get("repeat_rate") or 0.0),
+                    "total_customers": int(im.get("total_customers") or 0),
+                    "repeat_buyers": int(im.get("repeat_buyers") or 0),
+                    "store_aov": float(im.get("store_aov") or store_aov or 35.0),
+                    "monthly_revenue": monthly,
+                    "loyalty_opportunity": float(im.get("loyalty_opportunity") or monthly * 0.18),
+                }
+            )
         elif action_type == "low_margin_products":
             first = target_rows[0] if target_rows else {}
             units_sold = int(first.get("units_sold") or first.get("sales_last_90d") or 0)
@@ -889,7 +1090,7 @@ def run_reporting_for_store(*, store_id: int) -> tuple[str, str]:
     _ = build_report_task_sections(store_id, summary)
     from api.store_intelligence_api import api_results
 
-    report_payload = api_results(store_id)
+    report_payload = api_results(store_id, summary=summary)
     report_data = _build_email_report_data(store_id=store_id, report_payload=report_payload, summary=summary)
     report_path = str(Path("reports") / str(store_id) / "latest_results_report.json")
     recipient_email = get_store_contact_email_by_id(store_id) or ""

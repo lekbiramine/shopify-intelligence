@@ -427,12 +427,32 @@ def _inventory_items(summary: dict) -> list[str]:
 
 
 def _dead_inventory_items(summary: dict) -> list[str]:
-    low = list(summary.get("inventory", {}).get("low_stock", []) or [])
-    critical = list(summary.get("inventory", {}).get("critical_stock", []) or [])
-    pool = low + critical
+    products = sorted(
+        list((summary.get("anomalies") or {}).get("no_sales_products") or []),
+        key=lambda p: float(p.get("est_on_hand_value") or 0),
+        reverse=True,
+    )
     lines: list[str] = []
     seen: set[str] = set()
-    for row in pool:
+    for row in products:
+        name = _clean_entity_name(row.get("product_title"))
+        sku = _safe(row.get("primary_sku") or row.get("sku"))
+        qty = _to_int_optional(row.get("total_available"))
+        if not name or qty is None or qty <= 0:
+            continue
+        key = f"{name}|{sku}"
+        if key in seen:
+            continue
+        seen.add(key)
+        sku_txt = f" (SKU: {sku})" if sku else ""
+        lines.append(f"{name}{sku_txt} — inventory: {qty} units — sales: 0 in last 90d")
+        if len(lines) >= 4:
+            break
+    if lines:
+        return lines
+    low = list(summary.get("inventory", {}).get("low_stock", []) or [])
+    critical = list(summary.get("inventory", {}).get("critical_stock", []) or [])
+    for row in low + critical:
         name = _clean_entity_name(row.get("product_title"))
         sku = _safe(row.get("sku"))
         qty = _to_int_optional(row.get("total_available"))
@@ -464,6 +484,44 @@ def _financial_summary(insights: list[dict]) -> dict[str, float]:
         "recoverable": recoverable,
         "risk": risk,
         "net": recoverable + risk,
+    }
+
+
+# Share of weekly recoverable runway lost if no action is taken (distinct from full upside).
+_INACTION_WEEKLY_BLEED_RATE = 0.45
+
+
+def recoverable_opportunity(item: dict) -> float:
+    """Total upside if the store executes on this insight."""
+    if str(item.get("impact_type") or "").lower() == "risk":
+        return 0.0
+    return max(_to_float(item.get("potential_value")), 0.0)
+
+
+def projected_7d_loss(item: dict) -> float:
+    """Projected 7-day loss if this insight is ignored (not equal to recoverable upside)."""
+    potential = max(_to_float(item.get("potential_value")), 0.0)
+    if potential <= 0:
+        return 0.0
+    loss_days = max(int(item.get("loss_window_days") or 7), 1)
+    window_factor = min(7.0, float(loss_days)) / float(loss_days)
+    if str(item.get("impact_type") or "").lower() == "risk":
+        return round(potential * window_factor, 2)
+    weekly_runway = potential * window_factor
+    return round(weekly_runway * _INACTION_WEEKLY_BLEED_RATE, 2)
+
+
+def compute_store_decision_financials(summary: dict) -> dict[str, float]:
+    """Store-level EXECUTE / IGNORE inputs: recoverable opportunity vs projected 7-day loss."""
+    insights = list((summary or {}).get("insights") or [])
+    execute_value = round(sum(recoverable_opportunity(i) for i in insights), 2)
+    ignore_value = round(sum(projected_7d_loss(i) for i in insights), 2)
+    if execute_value > 0 and ignore_value >= execute_value:
+        ignore_value = round(execute_value * _INACTION_WEEKLY_BLEED_RATE, 2)
+    return {
+        "execute_value": execute_value,
+        "ignore_value": ignore_value,
+        "net_delta": round(execute_value - ignore_value, 2),
     }
 
 

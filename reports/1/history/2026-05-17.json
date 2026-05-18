@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-17T18:54:14.385379+00:00",
+  "generated_at": "2026-05-17T22:23:05.166785+00:00",
   "headline": {
     "primary": "YOUR STORE IS LOSING $3767.13 TODAY",
     "secondary": "$3767.13/day is currently being lost due to unresolved store issues"
@@ -35,7 +35,7 @@
       "targets": [
         "Jamie Patel \u2014 68 days since last order \u2014 LTV $2380.08",
         "Riley Walker \u2014 68 days since last order \u2014 LTV $2281.46",
-        "Taylor Hall \u2014 67 days since last order \u2014 LTV $2194.11",
+        "Taylor Hall \u2014 68 days since last order \u2014 LTV $2194.11",
         "Riley Miller \u2014 66 days since last order \u2014 LTV $2160.79",
         "Avery Brown \u2014 66 days since last order \u2014 LTV $2113.35"
       ],
@@ -274,7 +274,7 @@
   "report_contract": {
     "metadata": {
       "store_id": "1",
-      "generated_at": "2026-05-17T18:54:14.385379+00:00",
+      "generated_at": "2026-05-17T22:23:05.166785+00:00",
       "status": "critical"
     },
     "financials": {
@@ -308,7 +308,7 @@
         "targets": [
           "Jamie Patel \u2014 68 days since last order \u2014 LTV $2380.08",
           "Riley Walker \u2014 68 days since last order \u2014 LTV $2281.46",
-          "Taylor Hall \u2014 67 days since last order \u2014 LTV $2194.11",
+          "Taylor Hall \u2014 68 days since last order \u2014 LTV $2194.11",
           "Riley Miller \u2014 66 days since last order \u2014 LTV $2160.79",
           "Avery Brown \u2014 66 days since last order \u2014 LTV $2113.35"
         ],
@@ -466,7 +466,7 @@
       "ignored_at": null,
       "impact_realized_24h": 53.84,
       "impact_realized_7d": 376.9,
-      "last_verification_at": "2026-05-17T18:54:14.385055+00:00"
+      "last_verification_at": "2026-05-17T22:23:05.166467+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -478,7 +478,7 @@
       "ignored_at": null,
       "impact_realized_24h": 53.84,
       "impact_realized_7d": 376.9,
-      "last_verification_at": "2026-05-17T18:53:50.729302+00:00"
+      "last_verification_at": "2026-05-17T22:22:26.865140+00:00"
     },
     "action_3": {
       "action_id": "action_3",
