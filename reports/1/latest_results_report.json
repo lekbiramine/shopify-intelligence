@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-05-18T09:42:43.745768+00:00",
+  "generated_at": "2026-05-19T18:11:49.139216+00:00",
   "headline": {
-    "primary": "YOUR STORE IS LOSING $6099.71 TODAY",
-    "secondary": "$6099.71/day is currently being lost due to unresolved store issues"
+    "primary": "YOUR STORE IS LOSING $5911.75 TODAY",
+    "secondary": "$5911.75/day is currently being lost due to unresolved store issues"
   },
   "status": {
     "level": "CONFIRMED REVENUE LEAKS DETECTED",
@@ -14,8 +14,8 @@
   },
   "main_cause": "INVENTORY IMBALANCE",
   "inaction_risk": {
-    "weekly_loss": 29826.66,
-    "message": "If no action is taken, you will lose approximately $29826.66 in the next 7 days"
+    "weekly_loss": 29170.84,
+    "message": "If no action is taken, you will lose approximately $29170.84 in the next 7 days"
   },
   "execution_instruction": {
     "headline": "IMMEDIATE EXECUTION REQUIRED",
@@ -72,8 +72,8 @@
       "hierarchy_label": "HIGHEST IMPACT ACTION \u2014 EXECUTE FIRST",
       "priority_level": "primary",
       "previous_impact": {
-        "same_type_last_day_loss": 217.14,
-        "change": 2122.69
+        "same_type_last_day_loss": 2556.97,
+        "change": -217.14
       }
     },
     {
@@ -84,13 +84,13 @@
       "value": 11129.79,
       "daily_loss": 1589.97,
       "weekly_loss_projection": 11129.79,
-      "context": "5 high-value customers are going quiet \u2014 last order 68 days ago on average",
+      "context": "5 high-value customers are going quiet \u2014 last order 69 days ago on average",
       "targets": [
-        "Jamie Patel \u2014 69 days since last order \u2014 LTV $2380.08",
-        "Riley Walker \u2014 69 days since last order \u2014 LTV $2281.46",
-        "Taylor Hall \u2014 68 days since last order \u2014 LTV $2194.11",
-        "Riley Miller \u2014 67 days since last order \u2014 LTV $2160.79",
-        "Avery Brown \u2014 67 days since last order \u2014 LTV $2113.35"
+        "Jamie Patel \u2014 70 days since last order \u2014 LTV $2380.08",
+        "Riley Walker \u2014 70 days since last order \u2014 LTV $2281.46",
+        "Taylor Hall \u2014 69 days since last order \u2014 LTV $2194.11",
+        "Riley Miller \u2014 68 days since last order \u2014 LTV $2160.79",
+        "Avery Brown \u2014 68 days since last order \u2014 LTV $2113.35"
       ],
       "execution": {
         "primary": "Send a personal email from the store owner account to each VIP customer with an exclusive offer",
@@ -133,15 +133,15 @@
     },
     {
       "id": "action_3",
-      "title": "STOP CASH LEAK ($1286.84/DAY)",
+      "title": "STOP CASH LEAK ($1098.88/DAY)",
       "type": "conversion",
       "email_routing_type": "abandoned_checkout_spike",
-      "value": 9007.91,
-      "daily_loss": 1286.84,
-      "weekly_loss_projection": 9007.88,
-      "context": "87 checkouts abandoned this week \u2014 $9007.91 left at the door",
+      "value": 7692.18,
+      "daily_loss": 1098.88,
+      "weekly_loss_projection": 7692.16,
+      "context": "74 checkouts abandoned this week \u2014 $7692.18 left at the door",
       "targets": [
-        "87 checkouts abandoned this week \u2014 $9007.91 left at the door"
+        "74 checkouts abandoned this week \u2014 $7692.18 left at the door"
       ],
       "execution": {
         "primary": "Send a 2-email abandoned cart sequence: immediate recovery email at 1 hour, discount offer at 24 hours",
@@ -172,20 +172,20 @@
         }
       ],
       "expected_outcome": {
-        "financial_recovery": 9007.91,
-        "message": "Recover up to $9007.91 by fixing this issue"
+        "financial_recovery": 7692.18,
+        "message": "Recover up to $7692.18 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 9007.88,
-        "message": "You will lose approximately $9007.88 in the next 7 days if no action is taken"
+        "weekly_loss": 7692.16,
+        "message": "You will lose approximately $7692.16 in the next 7 days if no action is taken"
       },
       "consequence": "Checkout friction is blocking revenue capture",
       "decision": "EXECUTE NOW / DELAY = LOSS",
       "hierarchy_label": "ADDITIONAL LEAK \u2014 CONTAIN FINANCIAL RISK",
       "priority_level": "additional",
       "previous_impact": {
-        "same_type_last_day_loss": 1294.09,
-        "change": -7.25
+        "same_type_last_day_loss": 1286.84,
+        "change": -187.96
       }
     },
     {
@@ -290,8 +290,8 @@
       "hierarchy_label": "ADDITIONAL LEAK \u2014 CONTAIN FINANCIAL RISK",
       "priority_level": "additional",
       "previous_impact": {
-        "same_type_last_day_loss": 217.14,
-        "change": 0.0
+        "same_type_last_day_loss": 2556.97,
+        "change": -2339.83
       }
     }
   ],
@@ -301,24 +301,24 @@
     "roi_efficiency_score": 139.94
   },
   "risk": {
-    "weekly_loss_projection": 29826.66,
+    "weekly_loss_projection": 29170.84,
     "primary_driver": "ROOT CAUSE IDENTIFIED: INVENTORY IMBALANCE"
   },
   "execution_outcome_heading": "EXECUTION OUTCOME (PROJECTED IMPACT):",
   "final_warning": "Continued inaction will maintain the current loss rate.",
   "daily_delta": {
     "revenue_change": 0.0,
-    "loss_change": 3456.75,
-    "risk_change": 3456.75
+    "loss_change": -655.82,
+    "risk_change": -655.82
   },
-  "trend_state": "worsening",
+  "trend_state": "improving",
   "daily_insight": {
-    "message": "Store loss increased by $3456.75 versus yesterday.",
-    "key_change": "Loss exposure is rising and requires faster execution."
+    "message": "Store loss decreased by $655.82 versus yesterday.",
+    "key_change": "Loss pressure improved today."
   },
   "daily_comparison": {
     "title": "DAILY CHANGE vs YESTERDAY",
-    "loss_change_line": "+$3456.75 change in loss",
+    "loss_change_line": "-$655.82 change in loss",
     "revenue_change_line": "$0.00 change in revenue recovery",
     "continuity_memory": "Comparing today against previous day performance",
     "baseline_mode": false
@@ -327,19 +327,19 @@
   "report_contract": {
     "metadata": {
       "store_id": "1",
-      "generated_at": "2026-05-18T09:42:43.745768+00:00",
+      "generated_at": "2026-05-19T18:11:49.139216+00:00",
       "status": "critical"
     },
     "financials": {
-      "daily_impact": 6099.71,
-      "recoverable_7d": 46757.49,
-      "risk_7d": 29826.66,
+      "daily_impact": 5911.75,
+      "recoverable_7d": 45313.94,
+      "risk_7d": 29170.84,
       "root_cause": "INVENTORY IMBALANCE"
     },
     "decision_block": {
-      "execute_value": 46757.49,
-      "ignore_value": 29826.66,
-      "net_delta": 16930.83,
+      "execute_value": 45313.94,
+      "ignore_value": 29170.84,
+      "net_delta": 16143.1,
       "decision_message": "Executing top actions converts current loss into recovery within 7 days.",
       "time_window_days": 7,
       "baseline_assumption": "current_performance_state",
@@ -368,7 +368,7 @@
         "id": "action_2",
         "title": "RECOVER LOST CUSTOMERS ($1589.97/DAY)",
         "priority": 2,
-        "diagnosis": "5 high-value customers are going quiet \u2014 last order 68 days ago on average",
+        "diagnosis": "5 high-value customers are going quiet \u2014 last order 69 days ago on average",
         "intervention": "Send a personal email from the store owner account to each VIP customer with an exclusive offer",
         "expected_outcome": {
           "daily_impact": 1589.97,
@@ -377,28 +377,28 @@
           "source_rule_id": "action_impact_rule_v1"
         },
         "targets": [
-          "Jamie Patel \u2014 69 days since last order \u2014 LTV $2380.08",
-          "Riley Walker \u2014 69 days since last order \u2014 LTV $2281.46",
-          "Taylor Hall \u2014 68 days since last order \u2014 LTV $2194.11",
-          "Riley Miller \u2014 67 days since last order \u2014 LTV $2160.79",
-          "Avery Brown \u2014 67 days since last order \u2014 LTV $2113.35"
+          "Jamie Patel \u2014 70 days since last order \u2014 LTV $2380.08",
+          "Riley Walker \u2014 70 days since last order \u2014 LTV $2281.46",
+          "Taylor Hall \u2014 69 days since last order \u2014 LTV $2194.11",
+          "Riley Miller \u2014 68 days since last order \u2014 LTV $2160.79",
+          "Avery Brown \u2014 68 days since last order \u2014 LTV $2113.35"
         ],
         "state": "verified"
       },
       {
         "id": "action_3",
-        "title": "STOP CASH LEAK ($1286.84/DAY)",
+        "title": "STOP CASH LEAK ($1098.88/DAY)",
         "priority": 3,
-        "diagnosis": "87 checkouts abandoned this week \u2014 $9007.91 left at the door",
+        "diagnosis": "74 checkouts abandoned this week \u2014 $7692.18 left at the door",
         "intervention": "Send a 2-email abandoned cart sequence: immediate recovery email at 1 hour, discount offer at 24 hours",
         "expected_outcome": {
-          "daily_impact": 1286.84,
-          "weekly_value": 9007.91,
-          "risk_if_ignored": 4053.56,
+          "daily_impact": 1098.88,
+          "weekly_value": 7692.18,
+          "risk_if_ignored": 3461.48,
           "source_rule_id": "action_impact_rule_v1"
         },
         "targets": [
-          "87 checkouts abandoned this week \u2014 $9007.91 left at the door"
+          "74 checkouts abandoned this week \u2014 $7692.18 left at the door"
         ],
         "state": "pending"
       },
@@ -442,7 +442,7 @@
     ],
     "impact_summary": {
       "if_execute": "Recovered 179.92; Protected 99.96",
-      "if_ignore": "Projected 7-day loss 29826.66"
+      "if_ignore": "Projected 7-day loss 29170.84"
     },
     "_traceability": {
       "numeric_paths": [
@@ -547,9 +547,9 @@
       "executed_at": null,
       "snoozed_until": "2026-05-02T09:54:34.675345+00:00",
       "ignored_at": null,
-      "impact_realized_24h": 53.84,
-      "impact_realized_7d": 376.9,
-      "last_verification_at": "2026-05-18T09:42:43.745349+00:00"
+      "impact_realized_24h": 44.92,
+      "impact_realized_7d": 314.45,
+      "last_verification_at": "2026-05-19T18:11:49.138811+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -559,9 +559,9 @@
       "executed_at": null,
       "snoozed_until": null,
       "ignored_at": null,
-      "impact_realized_24h": 53.84,
-      "impact_realized_7d": 376.9,
-      "last_verification_at": "2026-05-18T09:42:43.745255+00:00"
+      "impact_realized_24h": 44.92,
+      "impact_realized_7d": 314.45,
+      "last_verification_at": "2026-05-19T18:11:49.138740+00:00"
     },
     "action_3": {
       "action_id": "action_3",
@@ -653,15 +653,15 @@
       "action_id": "action_2",
       "window": "7d",
       "predicted_recovered_7d": 20.0,
-      "actual_recovered_7d": 376.9,
-      "delta": 356.9
+      "actual_recovered_7d": 314.45,
+      "delta": 294.45
     },
     {
       "action_id": "action_1",
       "window": "7d",
       "predicted_recovered_7d": 159.92,
-      "actual_recovered_7d": 376.9,
-      "delta": 216.98
+      "actual_recovered_7d": 314.45,
+      "delta": 154.53
     }
   ]
 }
