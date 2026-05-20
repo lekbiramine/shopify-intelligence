@@ -25,8 +25,6 @@ def onboarding_env(monkeypatch):
     # Import after env values are set (db/settings validate at import time).
     import onboarding.app as onboarding
 
-    onboarding.SHOPIFY_API_KEY = "key"
-    onboarding.SHOPIFY_API_SECRET = "secret"
     onboarding.SHOPIFY_APP_BASE_URL = "https://app.example.com"
     onboarding.SHOPIFY_SCOPES = "read_products,read_orders,read_customers,read_inventory"
     return onboarding
@@ -128,6 +126,7 @@ def test_onboarding_referral_e2e_and_edge_cases(monkeypatch, onboarding_env):
         contact_email=None,
         referral_code_used=None,
         referral_code_id=None,
+        api_key=None,
     ):
         stores.setdefault(shop_domain, {"shop_domain": shop_domain})
         stores[shop_domain].update(
@@ -140,6 +139,7 @@ def test_onboarding_referral_e2e_and_edge_cases(monkeypatch, onboarding_env):
                 "contact_email": contact_email or stores[shop_domain].get("contact_email"),
                 "referral_code_used": referral_code_used or stores[shop_domain].get("referral_code_used"),
                 "referral_code_id": referral_code_id,
+                "api_key": api_key,
             }
         )
 
@@ -150,14 +150,16 @@ def test_onboarding_referral_e2e_and_edge_cases(monkeypatch, onboarding_env):
         }
         return True
 
-    monkeypatch.setattr(onboarding, "create_oauth_state", fake_create_oauth_state)
-    monkeypatch.setattr(onboarding, "consume_oauth_state", fake_consume_oauth_state)
-    monkeypatch.setattr(onboarding, "set_store_referral_code", fake_set_store_referral_code)
-    monkeypatch.setattr(onboarding, "upsert_store_contact_email", fake_upsert_store_contact_email)
-    monkeypatch.setattr(onboarding, "get_store_by_domain", fake_get_store_by_domain)
-    monkeypatch.setattr(onboarding, "get_active_referral_code_by_code", fake_get_active_referral_code_by_code)
-    monkeypatch.setattr(onboarding, "upsert_store_connection", fake_upsert_store_connection)
-    monkeypatch.setattr(onboarding, "attach_store_referral", fake_attach_store_referral)
+    import db.queries as db_queries
+
+    monkeypatch.setattr(db_queries, "create_oauth_state", fake_create_oauth_state)
+    monkeypatch.setattr(db_queries, "consume_oauth_state", fake_consume_oauth_state)
+    monkeypatch.setattr(db_queries, "set_store_referral_code", fake_set_store_referral_code)
+    monkeypatch.setattr(db_queries, "upsert_store_contact_email", fake_upsert_store_contact_email)
+    monkeypatch.setattr(db_queries, "get_store_by_domain", fake_get_store_by_domain)
+    monkeypatch.setattr(db_queries, "get_active_referral_code_by_code", fake_get_active_referral_code_by_code)
+    monkeypatch.setattr(db_queries, "upsert_store_connection", fake_upsert_store_connection)
+    monkeypatch.setattr(db_queries, "attach_store_referral", fake_attach_store_referral)
     monkeypatch.setattr(onboarding, "fetch_access_scopes", lambda shop, token: ["read_products", "read_orders", "read_customers", "read_inventory"])
     monkeypatch.setattr(onboarding, "validate_read_only_scopes", lambda scopes: (True, "ok"))
     monkeypatch.setattr(onboarding.requests, "post", lambda *args, **kwargs: FakeResponse({"access_token": "token_x", "scope": "read_products,read_orders,read_customers,read_inventory"}))
@@ -174,6 +176,7 @@ def test_onboarding_referral_e2e_and_edge_cases(monkeypatch, onboarding_env):
     )
     assert callback_response.status_code in (302, 307)
     assert stores["shop-a.myshopify.com"]["referral_code_used"] == "CREATOR20"
+    assert stores["shop-a.myshopify.com"].get("api_key") == "key"
     assert store_referrals["shop-a.myshopify.com"]["referral_code_id"] == 11
 
     # Without ref parameter should still complete.
@@ -235,7 +238,7 @@ def test_onboarding_referral_e2e_and_edge_cases(monkeypatch, onboarding_env):
     assert "Invalid or expired state" in second.text
 
     # Expired state must be rejected (signed timestamp in the past).
-    old_payload = "shop-g.myshopify.com|nonce|1"
+    old_payload = "shop-g.myshopify.com|nonce|1|1"
     old_sig = hmac.new("secret".encode("utf-8"), old_payload.encode("utf-8"), hashlib.sha256).hexdigest()
     expired_state = f"{old_payload}|{old_sig}"
     expired_params = {"shop": "shop-g.myshopify.com", "code": "oauth_code_123", "state": expired_state}

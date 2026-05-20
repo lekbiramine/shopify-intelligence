@@ -67,6 +67,7 @@ def run_store_pipeline(shop_domain: str) -> None:
             access_token=str(store.get("access_token") or "").strip(),
             refresh_token=(str(store.get("refresh_token") or "").strip() or None),
             access_token_expires_at=store.get("access_token_expires_at"),
+            shopify_api_key=(str(store.get("api_key") or "").strip() or None),
         )
         run_reporting_for_store(store_id=store_id)
         logger.info("Modal pipeline completed for %s (store_id=%s)", normalized_domain, store_id)

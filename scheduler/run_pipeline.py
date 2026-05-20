@@ -179,10 +179,13 @@ def _ensure_store_access_token(
     access_token: str,
     refresh_token: str | None = None,
     access_token_expires_at=None,
+    shopify_api_key: str | None = None,
 ) -> str:
     """
     Returns a usable access token, refreshing it when needed.
     """
+    client_id, client_secret = settings.resolve_shopify_oauth_client_credentials(shopify_api_key)
+
     token = (access_token or "").strip()
     if not token:
         raise RuntimeError(f"Missing access token for {shop_domain}")
@@ -199,7 +202,12 @@ def _ensure_store_access_token(
     if should_refresh:
         if not (refresh_token or "").strip():
             raise RuntimeError(f"Access token for {shop_domain} is expiring and no refresh token is stored.")
-        refreshed = refresh_access_token(shop_domain, refresh_token)
+        refreshed = refresh_access_token(
+            shop_domain,
+            refresh_token,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
         token = refreshed["access_token"]
         update_store_auth_tokens(
             shop_domain,
@@ -216,7 +224,12 @@ def _ensure_store_access_token(
 
     # If current token is invalid and we have a refresh token, rotate and retry.
     if (refresh_token or "").strip():
-        refreshed = refresh_access_token(shop_domain, refresh_token)
+        refreshed = refresh_access_token(
+            shop_domain,
+            refresh_token,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
         token = refreshed["access_token"]
         update_store_auth_tokens(
             shop_domain,
@@ -228,7 +241,12 @@ def _ensure_store_access_token(
         return token
 
     # Last attempt: one-time Shopify migration from non-expiring -> expiring offline token.
-    migrated = migrate_non_expiring_offline_token(shop_domain, token)
+    migrated = migrate_non_expiring_offline_token(
+        shop_domain,
+        token,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
     token = migrated["access_token"]
     update_store_auth_tokens(
         shop_domain,
@@ -248,6 +266,7 @@ def run_etl_for_store(
     access_token: str,
     refresh_token: str | None = None,
     access_token_expires_at=None,
+    shopify_api_key: str | None = None,
 ) -> None:
     logger.info("Starting ETL pipeline...")
     access_token = _ensure_store_access_token(
@@ -255,6 +274,7 @@ def run_etl_for_store(
         access_token=access_token,
         refresh_token=refresh_token,
         access_token_expires_at=access_token_expires_at,
+        shopify_api_key=shopify_api_key,
     )
     token_ok, token_detail = validate_access_token(shop_domain, access_token)
     if not token_ok:
@@ -1120,6 +1140,7 @@ def run_etl() -> None:
         access_token=store.get("access_token") or settings.SHOPIFY_ACCESS_TOKEN,
         refresh_token=store.get("refresh_token"),
         access_token_expires_at=store.get("access_token_expires_at"),
+        shopify_api_key=(str(store.get("api_key") or "").strip() or None),
     )
 
 
@@ -1178,6 +1199,7 @@ def run_pipeline() -> None:
                 access_token=str(store.get("access_token") or "").strip(),
                 refresh_token=(str(store.get("refresh_token") or "").strip() or None),
                 access_token_expires_at=store.get("access_token_expires_at"),
+                shopify_api_key=(str(store.get("api_key") or "").strip() or None),
             )
             run_reporting_for_store(store_id=store_id)
             logger.info("Manual pipeline completed for %s (store_id=%s)", shop_domain, store_id)

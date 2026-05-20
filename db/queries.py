@@ -25,6 +25,7 @@ def upsert_store_connection(
     display_name: str | None = None,
     referral_code_used: str | None = None,
     referral_code_id: int | None = None,
+    api_key: str | None = None,
 ) -> None:
     sql = """
         INSERT INTO stores (
@@ -37,11 +38,12 @@ def upsert_store_connection(
             contact_email,
             referral_code_used,
             referral_code_id,
+            api_key,
             is_active,
             connected_at,
             updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
         ON CONFLICT (shop_domain) DO UPDATE SET
             display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), stores.display_name),
             access_token = EXCLUDED.access_token,
@@ -51,6 +53,7 @@ def upsert_store_connection(
             contact_email = COALESCE(EXCLUDED.contact_email, stores.contact_email),
             referral_code_used = COALESCE(EXCLUDED.referral_code_used, stores.referral_code_used),
             referral_code_id = COALESCE(EXCLUDED.referral_code_id, stores.referral_code_id),
+            api_key = COALESCE(NULLIF(EXCLUDED.api_key, ''), stores.api_key),
             is_active = TRUE,
             connected_at = NOW(),
             updated_at = NOW();
@@ -68,6 +71,7 @@ def upsert_store_connection(
                 contact_email,
                 referral_code_used,
                 referral_code_id,
+                api_key,
             ),
         )
     logger.info(f"Connected store saved: {shop_domain}")
@@ -118,6 +122,7 @@ def get_store_by_domain(shop_domain: str) -> dict | None:
                contact_email,
                referral_code_used,
                referral_code_id,
+               api_key,
                is_active,
                last_report_sent_at,
                report_schedule_time,
@@ -425,6 +430,7 @@ def list_manual_reportable_stores() -> list[dict]:
                access_token,
                refresh_token,
                access_token_expires_at,
+               api_key,
                contact_email
         FROM stores
         WHERE is_active = TRUE
@@ -453,6 +459,7 @@ def list_connected_stores_for_cron() -> list[dict]:
                access_token,
                refresh_token,
                access_token_expires_at,
+               api_key,
                contact_email
         FROM stores
         WHERE is_active = TRUE

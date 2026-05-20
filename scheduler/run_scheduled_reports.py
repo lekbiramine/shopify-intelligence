@@ -68,6 +68,7 @@ def run_forever(poll_seconds: int = 20) -> None:
                     access_token=access_token,
                     refresh_token=refresh_token,
                     access_token_expires_at=access_token_expires_at,
+                    shopify_api_key=(str(store.get("api_key") or "").strip() or None),
                 )
                 run_reporting_for_store(store_id=store_id)
 

@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import onboarding.app as onboarding
+from config import settings
 from db.queries import (
     create_referral_code,
     deactivate_referral_code,
@@ -80,7 +81,7 @@ def main() -> None:
             "code": "fake_oauth_code",
             "state": state,
         }
-        callback_params["hmac"] = _shopify_hmac(onboarding.SHOPIFY_API_SECRET, callback_params)
+        callback_params["hmac"] = _shopify_hmac(settings.get_shopify_oauth_credentials(1)[1], callback_params)
         callback_resp = client.get("/oauth/callback", params=callback_params, follow_redirects=False)
         return install_resp, callback_resp, callback_params
 
@@ -152,9 +153,10 @@ def main() -> None:
         raise RuntimeError(f"Reused state was not rejected. Status={reused_second.status_code}")
 
     # Expired OAuth state should be rejected.
-    expired_payload = "live-expired-state.myshopify.com|nonce|1"
+    _oauth_secret = settings.get_shopify_oauth_credentials(1)[1]
+    expired_payload = "live-expired-state.myshopify.com|nonce|1|1"
     expired_sig = hmac.new(
-        onboarding.SHOPIFY_API_SECRET.encode("utf-8"),
+        _oauth_secret.encode("utf-8"),
         expired_payload.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
@@ -164,7 +166,7 @@ def main() -> None:
         "code": "fake_oauth_code",
         "state": expired_state,
     }
-    expired_params["hmac"] = _shopify_hmac(onboarding.SHOPIFY_API_SECRET, expired_params)
+    expired_params["hmac"] = _shopify_hmac(_oauth_secret, expired_params)
     expired_resp = client.get("/oauth/callback", params=expired_params, follow_redirects=False)
     if expired_resp.status_code != 400:
         raise RuntimeError(f"Expired state was not rejected. Status={expired_resp.status_code}")

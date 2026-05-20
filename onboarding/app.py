@@ -27,21 +27,6 @@ from utils.shopify_oauth_hmac import shopify_client_secret, verify_oauth_callbac
 logger = get_logger(__name__)
 load_dotenv(override=False)
 
-SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY", "")
-SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET", "")
-
-
-def _secret_prefix(value: str | None) -> str:
-    trimmed = (value or "").strip()
-    return trimmed[:4] if trimmed else "<empty>"
-
-
-logger.info(
-    "SHOPIFY_API_SECRET prefix at app load: os.getenv=%s module=%s",
-    _secret_prefix(os.getenv("SHOPIFY_API_SECRET", "")),
-    _secret_prefix(SHOPIFY_API_SECRET),
-)
-
 SHOPIFY_APP_BASE_URL = os.getenv("SHOPIFY_APP_BASE_URL", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 SECRET_KEY = os.getenv("SECRET_KEY", "")
@@ -117,16 +102,8 @@ def _post_install_redirect_response(shop_domain: str) -> RedirectResponse:
     return response
 
 
-def _ensure_oauth_env() -> None:
-    missing = [
-        key
-        for key, value in {
-            "SHOPIFY_API_KEY": SHOPIFY_API_KEY,
-            "SHOPIFY_API_SECRET": SHOPIFY_API_SECRET,
-            "SHOPIFY_APP_BASE_URL": SHOPIFY_APP_BASE_URL,
-        }.items()
-        if not value
-    ]
+def _ensure_oauth_base_env() -> None:
+    missing = [k for k, v in {"SHOPIFY_APP_BASE_URL": SHOPIFY_APP_BASE_URL}.items() if not v]
     if missing:
         raise HTTPException(status_code=500, detail=f"Missing OAuth env vars: {missing}")
     configured_scopes = set(_parse_scope_csv(SHOPIFY_SCOPES))
@@ -141,12 +118,35 @@ def _ensure_oauth_env() -> None:
         )
 
 
-def _build_state(shop_domain: str) -> str:
+def _resolve_oauth_app_credentials(app_id: int) -> tuple[str, str]:
+    try:
+        return settings.get_shopify_oauth_credentials(int(app_id))
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown or unconfigured Shopify app_id={app_id}. Set SHOPIFY_APP_{app_id}_KEY and SECRET.",
+        ) from exc
+
+
+def _peek_oauth_app_id_from_state(state: str) -> int:
+    """Recover app index embedded in OAuth state (defaults to 1 for legacy 4-part states)."""
+    canonical_state = _canonicalize_state(state)
+    parts = canonical_state.split("|")
+    if len(parts) >= 5:
+        try:
+            return int(parts[3])
+        except ValueError:
+            return 1
+    return 1
+
+
+def _build_state(shop_domain: str, app_id: int) -> str:
     nonce = secrets.token_hex(8)
     issued_at = str(int(time.time()))
-    payload = f"{shop_domain}|{nonce}|{issued_at}"
+    _, api_secret = _resolve_oauth_app_credentials(app_id)
+    payload = f"{shop_domain}|{nonce}|{issued_at}|{app_id}"
     signature = hmac.new(
-        SHOPIFY_API_SECRET.encode("utf-8"),
+        api_secret.encode("utf-8"),
         payload.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
@@ -178,9 +178,19 @@ def _validate_state(state: str, expected_shop: str) -> bool:
 
     canonical_state = _canonicalize_state(state)
     parts = canonical_state.split("|")
-    if len(parts) != 4:
+    if len(parts) == 4:
+        shop, nonce, issued_at, signature = parts
+        app_id = 1
+        payload = f"{shop}|{nonce}|{issued_at}"
+    elif len(parts) == 5:
+        shop, nonce, issued_at, app_id_raw, signature = parts
+        try:
+            app_id = int(app_id_raw)
+        except ValueError:
+            return False
+        payload = f"{shop}|{nonce}|{issued_at}|{app_id}"
+    else:
         return False
-    shop, nonce, issued_at, signature = parts
     if not nonce:
         return False
     try:
@@ -190,9 +200,12 @@ def _validate_state(state: str, expected_shop: str) -> bool:
         return False
     if state_shop.casefold() != expected_shop_normalized.casefold():
         return False
-    payload = f"{shop}|{nonce}|{issued_at}"
+    try:
+        _, api_secret = _resolve_oauth_app_credentials(app_id)
+    except HTTPException:
+        return False
     expected_sig = hmac.new(
-        SHOPIFY_API_SECRET.encode("utf-8"),
+        api_secret.encode("utf-8"),
         payload.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
@@ -247,11 +260,22 @@ def install(
     shop: str = Query(..., description="Store domain"),
     email: str | None = Query(default=None, description="Optional report recipient"),
     ref: str | None = Query(default=None, description="Optional referral code"),
+    app_id: int | None = Query(
+        default=None,
+        description="Shopify OAuth app index (SHOPIFY_APP_{id}_KEY); defaults to 1",
+    ),
 ) -> RedirectResponse:
     from db.queries import set_store_referral_code, upsert_store_contact_email
 
     try:
-        _ensure_oauth_env()
+        _ensure_oauth_base_env()
+        if not settings.SHOPIFY_OAUTH_APPS:
+            raise HTTPException(
+                status_code=500,
+                detail="No Shopify OAuth apps configured. Set SHOPIFY_APP_1_KEY/SECRET or SHOPIFY_API_KEY/SECRET.",
+            )
+        resolved_app_id = int(app_id) if app_id is not None else 1
+        shopify_api_key, _shopify_api_secret = _resolve_oauth_app_credentials(resolved_app_id)
         try:
             shop_domain = normalize_shop_domain(shop)
         except ValueError as exc:
@@ -264,14 +288,14 @@ def install(
             # Store pending referral code before OAuth callback.
             set_store_referral_code(shop_domain, referral_code)
 
-        state = _build_state(shop_domain)
+        state = _build_state(shop_domain, resolved_app_id)
         from db.queries import create_oauth_state
 
         create_oauth_state(_state_hash(state), shop_domain, ttl_seconds=600)
         redirect_uri = f"{SHOPIFY_APP_BASE_URL.rstrip('/')}/oauth/callback"
         query = urlencode(
             [
-                ("client_id", SHOPIFY_API_KEY),
+                ("client_id", shopify_api_key),
                 ("scope", SHOPIFY_SCOPES),
                 ("redirect_uri", redirect_uri),
                 ("state", state),
@@ -280,8 +304,9 @@ def install(
         )
         auth_url = f"https://{shop_domain}/admin/oauth/authorize?{query}"
         logger.info(
-            "Shopify install URL scopes for %s: %s (grant_options[]=per-user)",
+            "Shopify install URL scopes for %s app_id=%s: %s (grant_options[]=per-user)",
             shop_domain,
+            resolved_app_id,
             SHOPIFY_SCOPES,
         )
         return RedirectResponse(url=auth_url)
@@ -309,23 +334,37 @@ def oauth_callback(
     )
 
     try:
-        _ensure_oauth_env()
+        _ensure_oauth_base_env()
+        if not settings.SHOPIFY_OAUTH_APPS:
+            return PlainTextResponse(
+                "Server misconfiguration: no Shopify OAuth apps configured.",
+                status_code=500,
+            )
         shop_domain = normalize_shop_domain(shop)
+        oauth_app_id = _peek_oauth_app_id_from_state(state)
+        try:
+            shopify_api_key, shopify_api_secret = _resolve_oauth_app_credentials(oauth_app_id)
+        except HTTPException as exc:
+            detail = exc.detail
+            msg = detail if isinstance(detail, str) else str(detail)
+            return PlainTextResponse(msg, status_code=exc.status_code)
 
-        if not verify_oauth_callback_hmac(request, secret=shopify_client_secret() or SHOPIFY_API_SECRET):
+        if not verify_oauth_callback_hmac(
+            request, secret=shopify_client_secret() or shopify_api_secret
+        ):
             return PlainTextResponse(
                 "Invalid Shopify HMAC. In Vercel (api.perspicor.com), set SHOPIFY_API_SECRET to the "
                 "Client secret from Shopify Dev Dashboard → your app → API credentials "
-                "(must pair with SHOPIFY_API_KEY).",
+                "(must pair with the same app's API key used in /install).",
                 status_code=400,
             )
         if not _validate_state(state, shop_domain):
             return PlainTextResponse("Invalid or expired state.", status_code=400)
 
         token_url = f"https://{shop_domain}/admin/oauth/access_token"
-        api_secret = shopify_client_secret() or SHOPIFY_API_SECRET
+        api_secret = shopify_client_secret() or shopify_api_secret
         payload = {
-            "client_id": SHOPIFY_API_KEY,
+            "client_id": shopify_api_key,
             "client_secret": api_secret,
             "code": code,
             "expiring": "1",
@@ -422,6 +461,7 @@ def oauth_callback(
             contact_email=None,
             referral_code_used=referral_code_used,
             referral_code_id=referral_code_id,
+            api_key=shopify_api_key,
         )
 
         recipient = (email or "").strip()

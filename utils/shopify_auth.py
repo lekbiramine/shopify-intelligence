@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-import os
 
 import requests
 
@@ -134,15 +133,21 @@ def _oauth_access_token_url(shop_domain: str) -> str:
     return f"https://{shop_domain}/admin/oauth/access_token"
 
 
-def refresh_access_token(shop_domain: str, refresh_token: str) -> dict:
+def refresh_access_token(
+    shop_domain: str,
+    refresh_token: str,
+    *,
+    client_id: str,
+    client_secret: str,
+) -> dict:
     """
     Refreshes an expiring Shopify access token.
     Returns dict with keys: access_token, refresh_token (optional), access_token_expires_at (optional).
     """
-    api_key = (os.getenv("SHOPIFY_API_KEY") or "").strip()
-    api_secret = (os.getenv("SHOPIFY_API_SECRET") or "").strip()
+    api_key = (client_id or "").strip()
+    api_secret = (client_secret or "").strip()
     if not api_key or not api_secret:
-        raise RuntimeError("Missing SHOPIFY_API_KEY/SHOPIFY_API_SECRET for token refresh.")
+        raise RuntimeError("Missing client_id/client_secret for token refresh.")
     if not (refresh_token or "").strip():
         raise RuntimeError("Missing refresh token for this store.")
 
@@ -177,14 +182,20 @@ def refresh_access_token(shop_domain: str, refresh_token: str) -> dict:
     }
 
 
-def migrate_non_expiring_offline_token(shop_domain: str, access_token: str) -> dict:
+def migrate_non_expiring_offline_token(
+    shop_domain: str,
+    access_token: str,
+    *,
+    client_id: str,
+    client_secret: str,
+) -> dict:
     """
     One-time migration: exchange legacy non-expiring offline token for expiring offline token.
     """
-    api_key = (os.getenv("SHOPIFY_API_KEY") or "").strip()
-    api_secret = (os.getenv("SHOPIFY_API_SECRET") or "").strip()
+    api_key = (client_id or "").strip()
+    api_secret = (client_secret or "").strip()
     if not api_key or not api_secret:
-        raise RuntimeError("Missing SHOPIFY_API_KEY/SHOPIFY_API_SECRET for token migration.")
+        raise RuntimeError("Missing client_id/client_secret for token migration.")
     if not (access_token or "").strip():
         raise RuntimeError("Missing access token for migration.")
 

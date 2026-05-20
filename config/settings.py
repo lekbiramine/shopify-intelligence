@@ -3,6 +3,68 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _load_shopify_oauth_apps() -> dict[int, tuple[str, str]]:
+    """
+    Multi-tenant Shopify OAuth: SHOPIFY_APP_1_KEY + SHOPIFY_APP_1_SECRET, etc.
+    If none are set, fall back to legacy SHOPIFY_API_KEY / SHOPIFY_API_SECRET as app id 1.
+    """
+    apps: dict[int, tuple[str, str]] = {}
+    for n in range(1, 51):
+        key = (os.getenv(f"SHOPIFY_APP_{n}_KEY") or "").strip()
+        secret = (os.getenv(f"SHOPIFY_APP_{n}_SECRET") or "").strip()
+        if key and secret:
+            apps[n] = (key, secret)
+    if not apps:
+        legacy_key = (os.getenv("SHOPIFY_API_KEY") or "").strip()
+        legacy_secret = (os.getenv("SHOPIFY_API_SECRET") or "").strip()
+        if legacy_key and legacy_secret:
+            apps[1] = (legacy_key, legacy_secret)
+    return apps
+
+
+SHOPIFY_OAUTH_APPS: dict[int, tuple[str, str]] = _load_shopify_oauth_apps()
+
+
+def get_shopify_oauth_credentials(app_id: int) -> tuple[str, str]:
+    """Return (api_key, api_secret) for a configured app index, or raise KeyError."""
+    creds = SHOPIFY_OAUTH_APPS.get(int(app_id))
+    if not creds:
+        raise KeyError(app_id)
+    return creds
+
+
+def get_shopify_oauth_secret_for_api_key(api_key: str) -> str | None:
+    """Look up client secret for a stored Shopify API key (client id)."""
+    wanted = (api_key or "").strip()
+    if not wanted:
+        return None
+    for _app_id, (k, secret) in SHOPIFY_OAUTH_APPS.items():
+        if k == wanted:
+            return secret
+    return None
+
+
+def resolve_shopify_oauth_client_credentials(stored_api_key: str | None) -> tuple[str, str]:
+    """
+    Credentials for token refresh / migration for a store row.
+    Uses the store's saved api_key when set; otherwise app id 1 (legacy single-app).
+    """
+    if (stored_api_key or "").strip():
+        secret = get_shopify_oauth_secret_for_api_key(stored_api_key)
+        if not secret:
+            raise EnvironmentError(
+                "Store has api_key set but no matching SHOPIFY_APP_*_KEY/_SECRET in environment."
+            )
+        return (stored_api_key.strip(), secret)
+    if 1 in SHOPIFY_OAUTH_APPS:
+        return SHOPIFY_OAUTH_APPS[1]
+    raise EnvironmentError(
+        "Missing Shopify OAuth credentials: configure SHOPIFY_APP_1_KEY/SECRET "
+        "or SHOPIFY_API_KEY/SHOPIFY_API_SECRET, or reinstall stores with app_id."
+    )
+
+
 # Shopify
 SHOPIFY_STORE_URL = os.getenv("SHOPIFY_STORE_URL")
 SHOPIFY_ACCESS_TOKEN = os.getenv("SHOPIFY_ACCESS_TOKEN")
@@ -36,6 +98,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USE_SSL = (os.getenv("SMTP_USE_SSL") or "").strip().lower() in {"1", "true", "yes", "on"}
 SMTP_USE_STARTTLS = (os.getenv("SMTP_USE_STARTTLS") or "").strip().lower() in {"1", "true", "yes", "on"}
 CRON_SECRET = (os.getenv("CRON_SECRET") or "").strip()
+
 
 def validate_db_env() -> None:
     required = {

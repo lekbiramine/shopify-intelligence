@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS stores (
     refresh_token TEXT,
     access_token_expires_at TIMESTAMPTZ,
     scope TEXT,
+    api_key VARCHAR(255),
     contact_email VARCHAR(255),
     is_active BOOLEAN DEFAULT TRUE,
     last_report_sent_at TIMESTAMPTZ,
@@ -48,6 +49,9 @@ ALTER TABLE stores
 
 ALTER TABLE stores
     ADD COLUMN IF NOT EXISTS referral_code_id BIGINT;
+
+ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS api_key VARCHAR(255);
 
 -- Affiliate/referral codes managed by internal team
 CREATE TABLE IF NOT EXISTS referral_codes (
