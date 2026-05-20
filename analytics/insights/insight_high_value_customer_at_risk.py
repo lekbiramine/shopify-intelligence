@@ -79,6 +79,7 @@ def run_insight(db: Any, *, store_id: int) -> dict:
             )
             SELECT
                 COALESCE(COUNT(*), 0) AS customer_count,
+                COALESCE(SUM(COALESCE(a.lifetime_spend, 0)), 0) AS total_ltv_at_risk,
                 COALESCE(AVG(COALESCE(a.lifetime_spend, 0)), 0) AS avg_ltv,
                 COALESCE(AVG(COALESCE(a.days_since_order, 0)), 0) AS days_since_last_order,
                 COALESCE((SELECT value FROM store_aov), 0) AS store_aov
@@ -142,8 +143,8 @@ def run_insight(db: Any, *, store_id: int) -> dict:
     avg_ltv = float(summary.get("avg_ltv") or 0.0)
     days_since_last_order = float(summary.get("days_since_last_order") or 0.0)
     store_aov = float(summary.get("store_aov") or 0.0)
-    total_ltv_at_risk = customer_count * avg_ltv
-    daily_impact = (total_ltv_at_risk * 0.30) / 90.0
+    total_ltv_at_risk = float(summary.get("total_ltv_at_risk") or 0.0)
+    daily_impact = total_ltv_at_risk / 30.0 if total_ltv_at_risk > 0 else 0.0
     seven_day_projection = daily_impact * 7.0
 
     targets = [

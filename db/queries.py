@@ -1,4 +1,5 @@
 from db.connection import get_cursor
+from config import settings
 from config.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -75,6 +76,33 @@ def upsert_store_connection(
             ),
         )
     logger.info(f"Connected store saved: {shop_domain}")
+
+
+def get_next_available_app_id() -> int:
+    """
+    Return the lowest configured SHOPIFY_APP_n index whose client id is not
+    already stored on another store row (stores.api_key).
+    """
+    sql = """
+        SELECT api_key
+        FROM stores
+        WHERE api_key IS NOT NULL;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql)
+        rows = cursor.fetchall() or []
+    used_keys = {
+        (row.get("api_key") or "").strip()
+        for row in rows
+        if (row.get("api_key") or "").strip()
+    }
+    for app_id in sorted(settings.SHOPIFY_OAUTH_APPS.keys()):
+        key, _secret = settings.SHOPIFY_OAUTH_APPS[app_id]
+        if key.strip() not in used_keys:
+            return app_id
+    raise ValueError(
+        "No available app slots. Add more SHOPIFY_APP_N_KEY/SECRET pairs to env."
+    )
 
 
 def upsert_store_contact_email(shop_domain: str, contact_email: str) -> None:

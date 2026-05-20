@@ -1,4 +1,4 @@
-from analytics.customers import get_churned_customers, get_loyal_customers
+from analytics.customers import get_churned_customers, get_loyal_customers, get_store_repeat_rate_90d
 from analytics.revenue import get_high_return_rate_products
 from analytics.anomalies import (
     get_duplicate_orders,
@@ -26,12 +26,29 @@ from analytics.insights.insight_cart_abandonment_no_recovery import (
     run_insight as run_cart_abandonment_no_recovery_insight,
 )
 from analytics.insights.insight_no_loyalty_program import run_insight as run_no_loyalty_program_insight
+from db.connection import get_cursor
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from config import settings
 from config.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+def _monthly_revenue_30d(store_id: int) -> float:
+    with get_cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(COALESCE(o.total_price, 0)), 0) AS monthly_revenue
+            FROM orders o
+            WHERE o.store_id = %(store_id)s
+              AND o.created_at >= NOW() - INTERVAL '30 days'
+              AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
+            """,
+            {"store_id": store_id},
+        )
+        row = cursor.fetchone() or {}
+    return float(row.get("monthly_revenue") or 0.0)
 
 
 def _build_insight(
@@ -56,7 +73,9 @@ def _build_insight(
     loss_window_days: int | None = None,
     routing_type: str | None = None,
     metrics: dict | None = None,
+    daily_impact: float | None = None,
 ) -> dict:
+    explicit_daily = max(float(daily_impact or 0.0), 0.0)
     return {
         "category": category,
         "title": title,
@@ -79,6 +98,7 @@ def _build_insight(
         "loss_window_days": int(loss_window_days) if loss_window_days is not None else None,
         "routing_type": (routing_type or "").strip().lower() or None,
         "metrics": dict(metrics or {}),
+        "daily_impact": explicit_daily,
     }
 
 
@@ -88,7 +108,13 @@ def insight_churned_customers(store_id: int) -> dict | None:
         return None
 
     count = len(churned)
-    estimated_recovery = sum(float(c.get("total_spent", 0) or 0) / max(int(c.get("orders_count", 1) or 1), 1) for c in churned)
+    per_customer_aov = [
+        float(c.get("total_spent", 0) or 0) / max(int(c.get("orders_count", 1) or 1), 1) for c in churned
+    ]
+    avg_order_value = (sum(per_customer_aov) / count) if count > 0 else 0.0
+    repeat_rate = get_store_repeat_rate_90d(store_id)
+    estimated_recovery = sum(per_customer_aov)
+    daily_impact = count * avg_order_value * (repeat_rate / 30.0) if count > 0 and avg_order_value > 0 and repeat_rate > 0 else 0.0
     top_targets = sorted(churned, key=lambda c: float(c.get("total_spent", 0) or 0), reverse=True)[:8]
     exact_items = []
     for c in top_targets:
@@ -119,33 +145,53 @@ def insight_churned_customers(store_id: int) -> dict | None:
         impact_type="recoverable",
         is_generatable=True,
         routing_type="churned_customers",
+        daily_impact=daily_impact,
+        metrics={
+            "churned_count": count,
+            "avg_order_value": avg_order_value,
+            "repeat_rate": repeat_rate,
+            "potential_recovery": estimated_recovery,
+        },
     )
 
 
 def insight_high_return_rate(store_id: int) -> list[dict]:
     products = get_high_return_rate_products(store_id)
+    monthly_revenue = _monthly_revenue_30d(store_id)
     insights = []
     for p in products:
-        rate = float(p.get("return_rate", 0)) * 100
+        return_rate = float(p.get("return_rate", 0) or 0)
+        if return_rate <= 0.05:
+            continue
+        rate_pct = return_rate * 100
         returned_units = float(p.get("total_returned", 0) or 0)
         est_loss = returned_units * 20.0
+        daily_impact = (return_rate - 0.05) * monthly_revenue / 30.0
+        if daily_impact <= 0:
+            continue
         insights.append(
             _build_insight(
                 category="revenue",
                 title="High Return Rate Product",
                 severity="high",
-                problem=f"Product \"{p['product_title']}\" has a {rate:.1f}% return rate.",
+                problem=f"Product \"{p['product_title']}\" has a {rate_pct:.1f}% return rate.",
                 impact=f"~${est_loss:,.2f} potential loss from {returned_units:g} returned units.",
                 action=f"Pause paid ads for {p['product_title']} today until return rate drops below 20% (fix listing + fulfillment first).",
                 potential_value=est_loss,
                 exact_items=[
-                    f"{p.get('product_title')} (product_id={p.get('product_id')}) — return rate {rate:.1f}% — returned units {returned_units:g}"
+                    f"{p.get('product_title')} (product_id={p.get('product_id')}) — return rate {rate_pct:.1f}% — returned units {returned_units:g}"
                 ],
                 expected_outcome="Stop wasting ad spend on a leaky product and reduce refunds/chargebacks this week.",
                 confidence="low",
                 time_required_minutes=10,
                 loss_window_days=7,
                 routing_type="high_return_rate",
+                daily_impact=daily_impact,
+                metrics={
+                    "return_rate": return_rate,
+                    "monthly_revenue": monthly_revenue,
+                    "returned_units": returned_units,
+                },
             )
         )
     return insights
@@ -158,6 +204,7 @@ def insight_dead_inventory(store_id: int) -> list[dict]:
 
     n = len(products)
     total_value = sum(float(p.get("est_on_hand_value", 0) or 0) for p in products)
+    daily_impact = total_value / 90.0 if total_value > 0 else 0.0
     top_items = sorted(products, key=lambda p: float(p.get("est_on_hand_value", 0) or 0), reverse=True)[:8]
     exact_items = []
     for p in top_items:
@@ -185,6 +232,7 @@ def insight_dead_inventory(store_id: int) -> list[dict]:
             time_required_minutes=25,
             loss_window_days=14,
             routing_type="dead_inventory",
+            daily_impact=daily_impact,
         )
     ]
 
@@ -196,6 +244,8 @@ def insight_high_value_customers(store_id: int) -> dict | None:
     all_loyal_revenue = sum(float(c.get("total_spent", 0) or 0) for c in loyal)
     top2 = loyal[:2]
     top2_revenue = sum(float(c.get("total_spent", 0) or 0) for c in top2)
+    concentrated_revenue = top2_revenue
+    daily_impact = concentrated_revenue * 0.10 / 30.0 if concentrated_revenue > 0 else 0.0
     pct = (top2_revenue / all_loyal_revenue * 100) if all_loyal_revenue > 0 else 0.0
     exact_items = []
     for c in loyal[:5]:
@@ -216,6 +266,8 @@ def insight_high_value_customers(store_id: int) -> dict | None:
         impact_type="risk",
         exact_items=exact_items,
         routing_type="revenue_concentration",
+        daily_impact=daily_impact,
+        metrics={"concentrated_revenue": concentrated_revenue, "top2_revenue_share_pct": pct},
     )
 
 
@@ -340,6 +392,7 @@ def _build_signal_style_insight(signal: dict) -> dict:
             if text:
                 exact_items.append(text)
 
+    signal_daily = max(float(signal.get("daily_impact") or 0.0), 0.0)
     return _build_insight(
         category="revenue",
         title=title_by_type.get(action_type, action_type.replace("_", " ").title()),
@@ -348,6 +401,7 @@ def _build_signal_style_insight(signal: dict) -> dict:
         impact=f"Estimated 7-day value: ${float(signal.get('seven_day_projection') or 0.0):,.2f}",
         action=str(signal.get("fix") or "Take corrective action."),
         potential_value=float(signal.get("total_value") or 0.0),
+        daily_impact=signal_daily,
         impact_type=impact_type_by_type.get(action_type, "recoverable"),
         exact_items=exact_items,
         expected_outcome=f"Projected 7-day effect: ${float(signal.get('seven_day_projection') or 0.0):,.2f}",
@@ -355,7 +409,7 @@ def _build_signal_style_insight(signal: dict) -> dict:
         time_required_minutes=20,
         loss_window_days=7,
         routing_type=str(action_type or "").strip().lower() or None,
-        metrics=dict(signal.get("metrics") or {}),
+        metrics={**dict(signal.get("metrics") or {}), "daily_impact": signal_daily},
     )
 
 

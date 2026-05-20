@@ -36,9 +36,10 @@ def run_insight(db: Any, *, store_id: int) -> dict:
             ),
             order_metrics AS (
                 SELECT
-                    COALESCE(AVG(COALESCE(o.total_price, 0)), 0) AS store_aov
+                    COALESCE(AVG(COALESCE(o.total_price, 0)), 0) AS store_aov,
+                    COALESCE(SUM(COALESCE(o.total_price, 0)), 0) AS monthly_revenue
                 FROM orders o
-                WHERE o.created_at >= NOW() - INTERVAL '90 days'
+                WHERE o.created_at >= NOW() - INTERVAL '30 days'
                   AND o.store_id = %(store_id)s
                   AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
             )
@@ -46,7 +47,8 @@ def run_insight(db: Any, *, store_id: int) -> dict:
                 COALESCE(COUNT(*), 0) AS total_customers,
                 COALESCE(SUM(CASE WHEN c.order_count_90d >= 2 THEN 1 ELSE 0 END), 0) AS repeat_customers,
                 COALESCE(SUM(CASE WHEN c.order_count_90d = 1 THEN 1 ELSE 0 END), 0) AS one_time_buyers,
-                COALESCE((SELECT store_aov FROM order_metrics), 0) AS store_aov
+                COALESCE((SELECT store_aov FROM order_metrics), 0) AS store_aov,
+                COALESCE((SELECT monthly_revenue FROM order_metrics), 0) AS monthly_revenue
             FROM customer_order_counts c;
             """,
             {"store_id": store_id},
@@ -61,16 +63,19 @@ def run_insight(db: Any, *, store_id: int) -> dict:
     one_time_buyers = int(row.get("one_time_buyers") or 0)
     store_aov = float(row.get("store_aov") or 0.0)
     repeat_rate = (repeat_customers / total_customers) if total_customers > 0 else 0.0
+    monthly_revenue = float(row.get("monthly_revenue") or 0.0)
+    target_repeat_rate = 0.20
 
     if one_time_buyers <= 0:
         return {"detected": False}
 
-    if not (repeat_rate < 0.20 and total_customers >= 10):
+    if not (repeat_rate < target_repeat_rate and total_customers >= 10):
         return {"detected": False}
 
+    repeat_gap_value = max(target_repeat_rate - repeat_rate, 0.0) * monthly_revenue
+    daily_impact = repeat_gap_value / 30.0 if monthly_revenue > 0 and repeat_gap_value > 0 else 0.0
     revenue_if_10pct_improvement = one_time_buyers * 0.10 * store_aov
-    daily_impact = revenue_if_10pct_improvement / 90.0
-    total_value = revenue_if_10pct_improvement
+    total_value = repeat_gap_value if repeat_gap_value > 0 else revenue_if_10pct_improvement
     seven_day_projection = daily_impact * 7.0
 
     return {
@@ -81,6 +86,8 @@ def run_insight(db: Any, *, store_id: int) -> dict:
             "total_customers": total_customers,
             "one_time_buyers": one_time_buyers,
             "store_aov": store_aov,
+            "monthly_revenue": monthly_revenue,
+            "target_repeat_rate": target_repeat_rate,
             "revenue_if_10pct_improvement": revenue_if_10pct_improvement,
         },
         "daily_impact": daily_impact,

@@ -527,8 +527,12 @@ def compute_store_decision_financials(summary: dict) -> dict[str, float]:
 
 def _action_priority_metrics(item: dict) -> dict[str, float]:
     recoverable = max(_to_float(item.get("potential_value")), 0.0)
-    loss_days = max(int(item.get("loss_window_days") or 7), 1)
-    daily_loss = recoverable / loss_days if recoverable > 0 else 0.0
+    explicit_daily = max(_to_float(item.get("daily_impact")), 0.0)
+    if explicit_daily > 0:
+        daily_loss = explicit_daily
+    else:
+        loss_days = max(int(item.get("loss_window_days") or 7), 1)
+        daily_loss = recoverable / loss_days if recoverable > 0 else 0.0
     priority_score = recoverable + (daily_loss * 7.0)
     return {"recoverable": recoverable, "daily_loss": daily_loss, "priority_score": priority_score}
 
@@ -546,7 +550,7 @@ def _rank_priority_actions(
     insights: list[dict], max_actions: int | None = None
 ) -> list[dict]:
     cap = report_constants.REPORT_EMAIL_MAX_ACTIONS if max_actions is None else max_actions
-    ranked = [i for i in _prioritize_insights(insights) if _to_float(i.get("potential_value")) > 0]
+    ranked = [i for i in _prioritize_insights(insights) if _action_priority_metrics(i)["daily_loss"] > 0]
     ranked.sort(
         key=lambda i: (
             -_action_priority_metrics(i)["priority_score"],

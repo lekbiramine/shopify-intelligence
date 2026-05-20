@@ -42,9 +42,9 @@
       "executed_at": null,
       "snoozed_until": "2026-05-02T09:54:34.675345+00:00",
       "ignored_at": null,
-      "impact_realized_24h": 44.92,
-      "impact_realized_7d": 314.45,
-      "last_verification_at": "2026-05-19T18:11:49.138811+00:00"
+      "impact_realized_24h": 35.55,
+      "impact_realized_7d": 248.86,
+      "last_verification_at": "2026-05-20T15:19:00.090661+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -54,9 +54,9 @@
       "executed_at": null,
       "snoozed_until": null,
       "ignored_at": null,
-      "impact_realized_24h": 44.92,
-      "impact_realized_7d": 314.45,
-      "last_verification_at": "2026-05-19T18:11:49.138740+00:00"
+      "impact_realized_24h": 35.55,
+      "impact_realized_7d": 248.86,
+      "last_verification_at": "2026-05-20T15:19:00.090605+00:00"
     },
     "action_3": {
       "action_id": "action_3",
@@ -160,29 +160,29 @@
       "action_id": "action_2",
       "window": "7d",
       "predicted_recovered_7d": 20.0,
-      "actual_recovered_7d": 314.45,
-      "delta": 294.45
+      "actual_recovered_7d": 248.86,
+      "delta": 228.86
     },
     {
       "action_id": "action_1",
       "window": "7d",
       "predicted_recovered_7d": 159.92,
-      "actual_recovered_7d": 314.45,
-      "delta": 154.53
+      "actual_recovered_7d": 248.86,
+      "delta": 88.94
     }
   ],
   "score_feedback": {
     "operations:high-value customers at risk": {
-      "multiplier": 0.793,
-      "last_realized_7d": 314.45,
+      "multiplier": 0.7301,
+      "last_realized_7d": 248.86,
       "last_expected_7d": 11129.79,
-      "updated_at": "2026-05-19T18:11:49.138785+00:00"
+      "updated_at": "2026-05-20T15:19:00.090637+00:00"
     },
     "inventory:clear dead inventory via discount and bundling": {
-      "multiplier": 0.826,
-      "last_realized_7d": 314.45,
+      "multiplier": 0.73,
+      "last_realized_7d": 248.86,
       "last_expected_7d": 32757.6,
-      "updated_at": "2026-05-19T18:11:49.138843+00:00"
+      "updated_at": "2026-05-20T15:19:00.090677+00:00"
     },
     "conversion:abandoned checkout spike": {
       "multiplier": 0.901,

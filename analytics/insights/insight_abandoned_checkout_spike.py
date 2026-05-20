@@ -96,8 +96,10 @@ def run_insight(db: Any, *, store_id: int) -> dict:
     if not (abandonment_rate > 0.70 or spike_detected):
         return {"detected": False}
 
-    potential_revenue = abandoned_count * store_aov
-    daily_impact = (potential_revenue * 0.15) / 7.0
+    abandoned_value = abandoned_count * store_aov
+    recovery_rate = 0.15
+    potential_revenue = abandoned_value
+    daily_impact = abandoned_value * recovery_rate / 7.0 if abandoned_value > 0 else 0.0
     seven_day_projection = daily_impact * 7.0
 
     return {
@@ -106,6 +108,8 @@ def run_insight(db: Any, *, store_id: int) -> dict:
         "metrics": {
             "abandoned_count": abandoned_count,
             "abandonment_rate": abandonment_rate,
+            "abandoned_value": abandoned_value,
+            "recovery_rate": recovery_rate,
             "potential_revenue": potential_revenue,
             "store_aov": store_aov,
             "prev_week_abandonment_rate": prev_week_abandonment_rate,

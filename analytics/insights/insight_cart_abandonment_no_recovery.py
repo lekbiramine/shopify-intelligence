@@ -74,9 +74,10 @@ def run_insight(db: Any, *, store_id: int) -> dict:
     if not (abandoned_count >= 5 and abandonment_rate > 0.65):
         return {"detected": False}
 
-    potential_recovery = abandoned_count * store_aov * 0.15
-    weekly_loss = abandoned_count * store_aov
-    daily_impact = potential_recovery / 7.0
+    abandoned_value = abandoned_count * store_aov
+    potential_recovery = abandoned_value * 0.15
+    weekly_loss = abandoned_value
+    daily_impact = abandoned_value * 0.15 / 7.0 if abandoned_value > 0 else 0.0
     seven_day_projection = potential_recovery
 
     return {
@@ -86,6 +87,7 @@ def run_insight(db: Any, *, store_id: int) -> dict:
             "abandoned_count": abandoned_count,
             "abandonment_rate": abandonment_rate,
             "store_aov": store_aov,
+            "abandoned_value": abandoned_value,
             "potential_recovery": potential_recovery,
             "weekly_loss": weekly_loss,
         },

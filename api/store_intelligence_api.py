@@ -1026,6 +1026,7 @@ def api_results(store_id: int = 1, summary: dict | None = None) -> dict:
         4,
     )
     enriched_actions = [_build_enriched_action(action) for action in actions]
+    enriched_actions = [row for row in enriched_actions if float(row.get("daily_loss") or 0.0) > 0.0]
     enriched_actions.sort(key=lambda row: float(row.get("daily_loss") or 0.0), reverse=True)
     completed_ids = {str(x.get("action_id") or "") for x in completed if isinstance(x, dict)}
     total_daily_loss = round(sum(float(x["daily_loss"]) for x in enriched_actions), 2)
@@ -1090,6 +1091,17 @@ def api_results(store_id: int = 1, summary: dict | None = None) -> dict:
             "out_of_stock_variants_detected": len((summary.get("inventory", {}) or {}).get("out_of_stock", []) or []),
         },
     }
+    def _insight_daily_impact_for_route(route: str) -> float | None:
+        slug = str(route or "").strip().lower()
+        if not slug:
+            return None
+        for ins in summary.get("insights") or []:
+            if str(ins.get("routing_type") or "").strip().lower() != slug:
+                continue
+            daily = max(_safe_float(ins.get("daily_impact")), 0.0)
+            return daily if daily > 0 else None
+        return None
+
     top_actions_contract: list[dict] = []
     for idx, enriched_action in enumerate(
         report_payload["actions"][: app_constants.REPORT_EMAIL_MAX_ACTIONS], start=1
@@ -1116,15 +1128,23 @@ def api_results(store_id: int = 1, summary: dict | None = None) -> dict:
             execution_state = "executed"
         else:
             execution_state = "pending"
+        route = str(enriched_action.get("email_routing_type") or "").strip().lower()
+        insight_daily = _insight_daily_impact_for_route(route)
+        daily_impact = round(
+            insight_daily if insight_daily is not None else float(enriched_action.get("daily_loss") or 0.0),
+            2,
+        )
+        if daily_impact <= 0:
+            continue
         top_actions_contract.append(
             {
                 "id": action_id,
                 "title": str(enriched_action.get("title") or "").strip(),
-                "priority": idx,
+                "priority": len(top_actions_contract) + 1,
                 "diagnosis": str(enriched_action.get("context") or "").strip(),
                 "intervention": str(((enriched_action.get("execution") or {}).get("primary") or "")).strip(),
                 "expected_outcome": {
-                    "daily_impact": round(float(enriched_action.get("daily_loss") or 0.0), 2),
+                    "daily_impact": daily_impact,
                     "weekly_value": weekly_value,
                     "risk_if_ignored": risk_if_ignored,
                     "source_rule_id": "action_impact_rule_v1",

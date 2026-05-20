@@ -262,10 +262,14 @@ def install(
     ref: str | None = Query(default=None, description="Optional referral code"),
     app_id: int | None = Query(
         default=None,
-        description="Shopify OAuth app index (SHOPIFY_APP_{id}_KEY); defaults to 1",
+        description="Shopify OAuth app index (SHOPIFY_APP_{id}_KEY); auto-assigned when omitted",
     ),
 ) -> RedirectResponse:
-    from db.queries import set_store_referral_code, upsert_store_contact_email
+    from db.queries import (
+        get_next_available_app_id,
+        set_store_referral_code,
+        upsert_store_contact_email,
+    )
 
     try:
         _ensure_oauth_base_env()
@@ -274,7 +278,14 @@ def install(
                 status_code=500,
                 detail="No Shopify OAuth apps configured. Set SHOPIFY_APP_1_KEY/SECRET or SHOPIFY_API_KEY/SECRET.",
             )
-        resolved_app_id = int(app_id) if app_id is not None else 1
+        if app_id is not None:
+            resolved_app_id = int(app_id)
+        else:
+            try:
+                resolved_app_id = get_next_available_app_id()
+            except ValueError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            logger.info("Assigned app_id=%s for shop=%s", resolved_app_id, shop)
         shopify_api_key, _shopify_api_secret = _resolve_oauth_app_credentials(resolved_app_id)
         try:
             shop_domain = normalize_shop_domain(shop)

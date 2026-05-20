@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-05-19T18:11:49.139216+00:00",
+  "generated_at": "2026-05-20T15:19:00.090949+00:00",
   "headline": {
-    "primary": "YOUR STORE IS LOSING $5911.75 TODAY",
-    "secondary": "$5911.75/day is currently being lost due to unresolved store issues"
+    "primary": "YOUR STORE IS LOSING $1011.65 TODAY",
+    "secondary": "$1011.65/day is currently being lost due to unresolved store issues"
   },
   "status": {
     "level": "CONFIRMED REVENUE LEAKS DETECTED",
@@ -12,10 +12,10 @@
     "title": "EXECUTION REQUIRED",
     "message": "Failure to act results in compounding daily revenue loss"
   },
-  "main_cause": "INVENTORY IMBALANCE",
+  "main_cause": "OPERATIONAL REVENUE LEAK",
   "inaction_risk": {
-    "weekly_loss": 29170.84,
-    "message": "If no action is taken, you will lose approximately $29170.84 in the next 7 days"
+    "weekly_loss": 28301.0,
+    "message": "If no action is taken, you will lose approximately $28301.00 in the next 7 days"
   },
   "execution_instruction": {
     "headline": "IMMEDIATE EXECUTION REQUIRED",
@@ -24,13 +24,68 @@
   },
   "actions": [
     {
+      "id": "action_2",
+      "title": "RECOVER LOST CUSTOMERS ($370.99/DAY)",
+      "type": "operations",
+      "email_routing_type": "high_value_customer_at_risk",
+      "value": 11129.79,
+      "daily_loss": 370.99,
+      "weekly_loss_projection": 2596.93,
+      "context": "5 high-value customers are going quiet \u2014 last order 70 days ago on average",
+      "targets": [
+        "Jamie Patel \u2014 71 days since last order \u2014 LTV $2380.08",
+        "Riley Walker \u2014 71 days since last order \u2014 LTV $2281.46",
+        "Taylor Hall \u2014 70 days since last order \u2014 LTV $2194.11",
+        "Riley Miller \u2014 69 days since last order \u2014 LTV $2160.79",
+        "Avery Brown \u2014 69 days since last order \u2014 LTV $2113.35"
+      ],
+      "execution": {
+        "primary": "Send a personal email from the store owner account to each VIP customer with an exclusive offer",
+        "alternatives": [
+          "Prioritize top-loss root cause",
+          "Run a 7-day recovery sprint"
+        ]
+      },
+      "systems": [
+        {
+          "system": "Shopify",
+          "steps": [
+            "Shopify \u2192 Analytics \u2192 Reports \u2192 Identify the biggest daily loss driver",
+            "Shopify \u2192 Products / Orders \u2192 Execute the specific fix on the flagged items"
+          ]
+        },
+        {
+          "system": "Ads platform",
+          "steps": [
+            "Ads Manager \u2192 Pause spend on any campaign tied to the loss driver"
+          ]
+        }
+      ],
+      "expected_outcome": {
+        "financial_recovery": 11129.79,
+        "message": "Recover up to $11129.79 by fixing this issue"
+      },
+      "risk_if_ignored": {
+        "weekly_loss": 2596.93,
+        "message": "You will lose approximately $2596.93 in the next 7 days if no action is taken"
+      },
+      "consequence": "Operational gaps are leaking cash",
+      "decision": "EXECUTE NOW / DELAY = LOSS",
+      "hierarchy_label": "HIGHEST IMPACT ACTION \u2014 EXECUTE FIRST",
+      "priority_level": "primary",
+      "previous_impact": {
+        "same_type_last_day_loss": 2255.9,
+        "change": -1884.91
+      }
+    },
+    {
       "id": "action_1",
-      "title": "STOP DAILY CASH LOSS ($2339.83/DAY)",
+      "title": "STOP DAILY CASH LOSS ($363.97/DAY)",
       "type": "inventory",
       "email_routing_type": "dead_inventory",
       "value": 32757.6,
-      "daily_loss": 2339.83,
-      "weekly_loss_projection": 16378.81,
+      "daily_loss": 363.97,
+      "weekly_loss_projection": 2547.79,
       "context": "2 SKUs have inventory >0 and zero sales in the last 90 days",
       "targets": [
         "The Multi (SKU: sku-managed-1) \u2014 inventory: 27 units \u2014 sales: 0 in last 90d",
@@ -64,84 +119,29 @@
         "message": "Recover up to $32757.60 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 16378.81,
-        "message": "You will lose approximately $16378.81 in the next 7 days if no action is taken"
+        "weekly_loss": 2547.79,
+        "message": "You will lose approximately $2547.79 in the next 7 days if no action is taken"
       },
       "consequence": "Dead inventory is draining profit",
-      "decision": "EXECUTE NOW / DELAY = LOSS",
-      "hierarchy_label": "HIGHEST IMPACT ACTION \u2014 EXECUTE FIRST",
-      "priority_level": "primary",
-      "previous_impact": {
-        "same_type_last_day_loss": 2556.97,
-        "change": -217.14
-      }
-    },
-    {
-      "id": "action_2",
-      "title": "RECOVER LOST CUSTOMERS ($1589.97/DAY)",
-      "type": "operations",
-      "email_routing_type": "high_value_customer_at_risk",
-      "value": 11129.79,
-      "daily_loss": 1589.97,
-      "weekly_loss_projection": 11129.79,
-      "context": "5 high-value customers are going quiet \u2014 last order 69 days ago on average",
-      "targets": [
-        "Jamie Patel \u2014 70 days since last order \u2014 LTV $2380.08",
-        "Riley Walker \u2014 70 days since last order \u2014 LTV $2281.46",
-        "Taylor Hall \u2014 69 days since last order \u2014 LTV $2194.11",
-        "Riley Miller \u2014 68 days since last order \u2014 LTV $2160.79",
-        "Avery Brown \u2014 68 days since last order \u2014 LTV $2113.35"
-      ],
-      "execution": {
-        "primary": "Send a personal email from the store owner account to each VIP customer with an exclusive offer",
-        "alternatives": [
-          "Prioritize top-loss root cause",
-          "Run a 7-day recovery sprint"
-        ]
-      },
-      "systems": [
-        {
-          "system": "Shopify",
-          "steps": [
-            "Shopify \u2192 Analytics \u2192 Reports \u2192 Identify the biggest daily loss driver",
-            "Shopify \u2192 Products / Orders \u2192 Execute the specific fix on the flagged items"
-          ]
-        },
-        {
-          "system": "Ads platform",
-          "steps": [
-            "Ads Manager \u2192 Pause spend on any campaign tied to the loss driver"
-          ]
-        }
-      ],
-      "expected_outcome": {
-        "financial_recovery": 11129.79,
-        "message": "Recover up to $11129.79 by fixing this issue"
-      },
-      "risk_if_ignored": {
-        "weekly_loss": 11129.79,
-        "message": "You will lose approximately $11129.79 in the next 7 days if no action is taken"
-      },
-      "consequence": "Operational gaps are leaking cash",
       "decision": "EXECUTE NOW / DELAY = LOSS",
       "hierarchy_label": "SECONDARY ISSUE \u2014 ADDRESS AFTER ACTION #1",
       "priority_level": "secondary",
       "previous_impact": {
-        "same_type_last_day_loss": 2255.9,
-        "change": -665.93
+        "same_type_last_day_loss": 2556.97,
+        "change": -2193.0
       }
     },
     {
       "id": "action_3",
-      "title": "STOP CASH LEAK ($1098.88/DAY)",
+      "title": "STOP CASH LEAK ($134.24/DAY)",
       "type": "conversion",
       "email_routing_type": "abandoned_checkout_spike",
-      "value": 7692.18,
-      "daily_loss": 1098.88,
-      "weekly_loss_projection": 7692.16,
-      "context": "74 checkouts abandoned this week \u2014 $7692.18 left at the door",
+      "value": 6264.74,
+      "daily_loss": 134.24,
+      "weekly_loss_projection": 939.68,
+      "context": "60 checkouts abandoned this week \u2014 $6264.74 left at the door",
       "targets": [
-        "74 checkouts abandoned this week \u2014 $7692.18 left at the door"
+        "60 checkouts abandoned this week \u2014 $6264.74 left at the door"
       ],
       "execution": {
         "primary": "Send a 2-email abandoned cart sequence: immediate recovery email at 1 hour, discount offer at 24 hours",
@@ -172,30 +172,87 @@
         }
       ],
       "expected_outcome": {
-        "financial_recovery": 7692.18,
-        "message": "Recover up to $7692.18 by fixing this issue"
+        "financial_recovery": 6264.74,
+        "message": "Recover up to $6264.74 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 7692.16,
-        "message": "You will lose approximately $7692.16 in the next 7 days if no action is taken"
+        "weekly_loss": 939.68,
+        "message": "You will lose approximately $939.68 in the next 7 days if no action is taken"
       },
       "consequence": "Checkout friction is blocking revenue capture",
       "decision": "EXECUTE NOW / DELAY = LOSS",
       "hierarchy_label": "ADDITIONAL LEAK \u2014 CONTAIN FINANCIAL RISK",
       "priority_level": "additional",
       "previous_impact": {
-        "same_type_last_day_loss": 1286.84,
-        "change": -187.96
+        "same_type_last_day_loss": 1098.88,
+        "change": -964.64
+      }
+    },
+    {
+      "id": "action_5",
+      "title": "STOP CASH LEAK ($126.91/DAY)",
+      "type": "conversion",
+      "email_routing_type": "cart_abandonment_no_recovery",
+      "value": 888.4,
+      "daily_loss": 126.91,
+      "weekly_loss_projection": 888.37,
+      "context": "60 carts abandoned this week (93.8% rate) \u2014 no cart recovery sequence detected",
+      "targets": [
+        "60 carts abandoned this week (93.8% rate) \u2014 no cart recovery sequence detected"
+      ],
+      "execution": {
+        "primary": "Launch 3-email abandoned cart sequence: 1 hour, 24 hours, 72 hours",
+        "alternatives": [
+          "Improve payment trust cues",
+          "Optimize shipping visibility at checkout"
+        ]
+      },
+      "systems": [
+        {
+          "system": "Shopify",
+          "steps": [
+            "Shopify \u2192 Settings \u2192 Checkout \u2192 Review shipping, payments, and checkout branding",
+            "Shopify \u2192 Analytics \u2192 Checkout behavior \u2192 Identify the biggest drop-off step"
+          ]
+        },
+        {
+          "system": "Ads platform",
+          "steps": [
+            "Ads Manager \u2192 Retargeting \u2192 Ensure abandoned checkout retargeting is running"
+          ]
+        },
+        {
+          "system": "Email/CRM",
+          "steps": [
+            "Email/CRM \u2192 Flows \u2192 Abandoned checkout \u2192 Enable and verify send timing (1h / 12h / 24h)"
+          ]
+        }
+      ],
+      "expected_outcome": {
+        "financial_recovery": 888.4,
+        "message": "Recover up to $888.40 by fixing this issue"
+      },
+      "risk_if_ignored": {
+        "weekly_loss": 888.37,
+        "message": "You will lose approximately $888.37 in the next 7 days if no action is taken"
+      },
+      "consequence": "Checkout friction is blocking revenue capture",
+      "decision": "EXECUTE NOW / DELAY = LOSS",
+      "hierarchy_label": "ADDITIONAL LEAK \u2014 CONTAIN FINANCIAL RISK",
+      "priority_level": "additional",
+      "previous_impact": {
+        "same_type_last_day_loss": 1098.88,
+        "change": -971.97
       }
     },
     {
       "id": "action_4",
-      "title": "RECOVER LOST CUSTOMERS ($665.93/DAY)",
+      "title": "RECOVER LOST CUSTOMERS ($15.54/DAY)",
       "type": "operations",
       "email_routing_type": "revenue_concentration",
       "value": 4661.54,
-      "daily_loss": 665.93,
-      "weekly_loss_projection": 4661.51,
+      "daily_loss": 15.54,
+      "weekly_loss_projection": 108.78,
       "context": "Top 2 customers represent 30.6% of loyal revenue",
       "targets": [
         "Jamie Patel \u2014 spend $2,380.08 \u2014 20 orders",
@@ -230,8 +287,8 @@
         "message": "Recover up to $4661.54 by fixing this issue"
       },
       "risk_if_ignored": {
-        "weekly_loss": 4661.51,
-        "message": "You will lose approximately $4661.51 in the next 7 days if no action is taken"
+        "weekly_loss": 108.78,
+        "message": "You will lose approximately $108.78 in the next 7 days if no action is taken"
       },
       "consequence": "Operational gaps are leaking cash",
       "decision": "EXECUTE NOW / DELAY = LOSS",
@@ -239,59 +296,7 @@
       "priority_level": "additional",
       "previous_impact": {
         "same_type_last_day_loss": 2255.9,
-        "change": -1589.97
-      }
-    },
-    {
-      "id": "action_5",
-      "title": "STOP DAILY CASH LOSS ($217.14/DAY)",
-      "type": "inventory",
-      "email_routing_type": "high_return_rate",
-      "value": 1520.0,
-      "daily_loss": 217.14,
-      "weekly_loss_projection": 1519.98,
-      "context": "The Inventory Not Tracked Snowboard return rate is 46.1%",
-      "targets": [
-        "The Inventory Not Tracked Snowboard \u2014 46.1% return rate \u2014 76 returned units"
-      ],
-      "execution": {
-        "primary": "Pause paid ads for The Inventory Not Tracked Snowboard until return rate improves",
-        "alternatives": [
-          "Bundle with top-selling product",
-          "Run limited-time promotion"
-        ]
-      },
-      "systems": [
-        {
-          "system": "Shopify",
-          "steps": [
-            "Shopify \u2192 Products \u2192 Discounts \u2192 Create 15% discount for listed SKUs",
-            "Shopify \u2192 Bundles / Apps \u2192 Create bundle offer for dead inventory listed SKUs",
-            "Shopify \u2192 Products \u2192 Inventory \u2192 Verify on-hand quantity + adjust if needed"
-          ]
-        },
-        {
-          "system": "Ads platform",
-          "steps": [
-            "Ads Manager \u2192 Pause campaigns promoting listed SKUs until sell-through improves"
-          ]
-        }
-      ],
-      "expected_outcome": {
-        "financial_recovery": 1520.0,
-        "message": "Recover up to $1520.00 by fixing this issue"
-      },
-      "risk_if_ignored": {
-        "weekly_loss": 1519.98,
-        "message": "You will lose approximately $1519.98 in the next 7 days if no action is taken"
-      },
-      "consequence": "Dead inventory is draining profit",
-      "decision": "EXECUTE NOW / DELAY = LOSS",
-      "hierarchy_label": "ADDITIONAL LEAK \u2014 CONTAIN FINANCIAL RISK",
-      "priority_level": "additional",
-      "previous_impact": {
-        "same_type_last_day_loss": 2556.97,
-        "change": -2339.83
+        "change": -2240.36
       }
     }
   ],
@@ -301,24 +306,24 @@
     "roi_efficiency_score": 139.94
   },
   "risk": {
-    "weekly_loss_projection": 29170.84,
-    "primary_driver": "ROOT CAUSE IDENTIFIED: INVENTORY IMBALANCE"
+    "weekly_loss_projection": 28301.0,
+    "primary_driver": "ROOT CAUSE IDENTIFIED: OPERATIONAL REVENUE LEAK"
   },
   "execution_outcome_heading": "EXECUTION OUTCOME (PROJECTED IMPACT):",
   "final_warning": "Continued inaction will maintain the current loss rate.",
   "daily_delta": {
     "revenue_change": 0.0,
-    "loss_change": -655.82,
-    "risk_change": -655.82
+    "loss_change": -869.84,
+    "risk_change": -869.84
   },
   "trend_state": "improving",
   "daily_insight": {
-    "message": "Store loss decreased by $655.82 versus yesterday.",
+    "message": "Store loss decreased by $869.84 versus yesterday.",
     "key_change": "Loss pressure improved today."
   },
   "daily_comparison": {
     "title": "DAILY CHANGE vs YESTERDAY",
-    "loss_change_line": "-$655.82 change in loss",
+    "loss_change_line": "-$869.84 change in loss",
     "revenue_change_line": "$0.00 change in revenue recovery",
     "continuity_memory": "Comparing today against previous day performance",
     "baseline_mode": false
@@ -327,19 +332,19 @@
   "report_contract": {
     "metadata": {
       "store_id": "1",
-      "generated_at": "2026-05-19T18:11:49.139216+00:00",
+      "generated_at": "2026-05-20T15:19:00.090949+00:00",
       "status": "critical"
     },
     "financials": {
-      "daily_impact": 5911.75,
-      "recoverable_7d": 45313.94,
-      "risk_7d": 29170.84,
-      "root_cause": "INVENTORY IMBALANCE"
+      "daily_impact": 1011.65,
+      "recoverable_7d": 43380.94,
+      "risk_7d": 28301.0,
+      "root_cause": "OPERATIONAL REVENUE LEAK"
     },
     "decision_block": {
-      "execute_value": 45313.94,
-      "ignore_value": 29170.84,
-      "net_delta": 16143.1,
+      "execute_value": 43380.94,
+      "ignore_value": 28301.0,
+      "net_delta": 15079.94,
       "decision_message": "Executing top actions converts current loss into recovery within 7 days.",
       "time_window_days": 7,
       "baseline_assumption": "current_performance_state",
@@ -347,13 +352,34 @@
     },
     "actions": [
       {
-        "id": "action_1",
-        "title": "STOP DAILY CASH LOSS ($2339.83/DAY)",
+        "id": "action_2",
+        "title": "RECOVER LOST CUSTOMERS ($370.99/DAY)",
         "priority": 1,
+        "diagnosis": "5 high-value customers are going quiet \u2014 last order 70 days ago on average",
+        "intervention": "Send a personal email from the store owner account to each VIP customer with an exclusive offer",
+        "expected_outcome": {
+          "daily_impact": 370.99,
+          "weekly_value": 11129.79,
+          "risk_if_ignored": 5008.41,
+          "source_rule_id": "action_impact_rule_v1"
+        },
+        "targets": [
+          "Jamie Patel \u2014 71 days since last order \u2014 LTV $2380.08",
+          "Riley Walker \u2014 71 days since last order \u2014 LTV $2281.46",
+          "Taylor Hall \u2014 70 days since last order \u2014 LTV $2194.11",
+          "Riley Miller \u2014 69 days since last order \u2014 LTV $2160.79",
+          "Avery Brown \u2014 69 days since last order \u2014 LTV $2113.35"
+        ],
+        "state": "verified"
+      },
+      {
+        "id": "action_1",
+        "title": "STOP DAILY CASH LOSS ($363.97/DAY)",
+        "priority": 2,
         "diagnosis": "2 SKUs have inventory >0 and zero sales in the last 90 days",
         "intervention": "Create automatic discount (15%) and bundle offer for listed SKUs",
         "expected_outcome": {
-          "daily_impact": 2339.83,
+          "daily_impact": 363.97,
           "weekly_value": 32757.6,
           "risk_if_ignored": 14740.92,
           "source_rule_id": "action_impact_rule_v1"
@@ -365,51 +391,47 @@
         "state": "verified"
       },
       {
-        "id": "action_2",
-        "title": "RECOVER LOST CUSTOMERS ($1589.97/DAY)",
-        "priority": 2,
-        "diagnosis": "5 high-value customers are going quiet \u2014 last order 69 days ago on average",
-        "intervention": "Send a personal email from the store owner account to each VIP customer with an exclusive offer",
-        "expected_outcome": {
-          "daily_impact": 1589.97,
-          "weekly_value": 11129.79,
-          "risk_if_ignored": 5008.41,
-          "source_rule_id": "action_impact_rule_v1"
-        },
-        "targets": [
-          "Jamie Patel \u2014 70 days since last order \u2014 LTV $2380.08",
-          "Riley Walker \u2014 70 days since last order \u2014 LTV $2281.46",
-          "Taylor Hall \u2014 69 days since last order \u2014 LTV $2194.11",
-          "Riley Miller \u2014 68 days since last order \u2014 LTV $2160.79",
-          "Avery Brown \u2014 68 days since last order \u2014 LTV $2113.35"
-        ],
-        "state": "verified"
-      },
-      {
         "id": "action_3",
-        "title": "STOP CASH LEAK ($1098.88/DAY)",
+        "title": "STOP CASH LEAK ($134.24/DAY)",
         "priority": 3,
-        "diagnosis": "74 checkouts abandoned this week \u2014 $7692.18 left at the door",
+        "diagnosis": "60 checkouts abandoned this week \u2014 $6264.74 left at the door",
         "intervention": "Send a 2-email abandoned cart sequence: immediate recovery email at 1 hour, discount offer at 24 hours",
         "expected_outcome": {
-          "daily_impact": 1098.88,
-          "weekly_value": 7692.18,
-          "risk_if_ignored": 3461.48,
+          "daily_impact": 134.24,
+          "weekly_value": 6264.74,
+          "risk_if_ignored": 2819.13,
           "source_rule_id": "action_impact_rule_v1"
         },
         "targets": [
-          "74 checkouts abandoned this week \u2014 $7692.18 left at the door"
+          "60 checkouts abandoned this week \u2014 $6264.74 left at the door"
+        ],
+        "state": "pending"
+      },
+      {
+        "id": "action_5",
+        "title": "STOP CASH LEAK ($126.91/DAY)",
+        "priority": 4,
+        "diagnosis": "60 carts abandoned this week (93.8% rate) \u2014 no cart recovery sequence detected",
+        "intervention": "Launch 3-email abandoned cart sequence: 1 hour, 24 hours, 72 hours",
+        "expected_outcome": {
+          "daily_impact": 126.91,
+          "weekly_value": 888.4,
+          "risk_if_ignored": 399.78,
+          "source_rule_id": "action_impact_rule_v1"
+        },
+        "targets": [
+          "60 carts abandoned this week (93.8% rate) \u2014 no cart recovery sequence detected"
         ],
         "state": "pending"
       },
       {
         "id": "action_4",
-        "title": "RECOVER LOST CUSTOMERS ($665.93/DAY)",
-        "priority": 4,
+        "title": "RECOVER LOST CUSTOMERS ($15.54/DAY)",
+        "priority": 5,
         "diagnosis": "Top 2 customers represent 30.6% of loyal revenue",
         "intervention": "Send a repeat-order offer to loyal customers outside your current top 2 buyers",
         "expected_outcome": {
-          "daily_impact": 665.93,
+          "daily_impact": 15.54,
           "weekly_value": 4661.54,
           "risk_if_ignored": 2097.69,
           "source_rule_id": "action_impact_rule_v1"
@@ -421,28 +443,11 @@
           "Riley Miller \u2014 spend $2,160.79 \u2014 20 orders"
         ],
         "state": "pending"
-      },
-      {
-        "id": "action_5",
-        "title": "STOP DAILY CASH LOSS ($217.14/DAY)",
-        "priority": 5,
-        "diagnosis": "The Inventory Not Tracked Snowboard return rate is 46.1%",
-        "intervention": "Pause paid ads for The Inventory Not Tracked Snowboard until return rate improves",
-        "expected_outcome": {
-          "daily_impact": 217.14,
-          "weekly_value": 1520.0,
-          "risk_if_ignored": 684.0,
-          "source_rule_id": "action_impact_rule_v1"
-        },
-        "targets": [
-          "The Inventory Not Tracked Snowboard \u2014 46.1% return rate \u2014 76 returned units"
-        ],
-        "state": "pending"
       }
     ],
     "impact_summary": {
       "if_execute": "Recovered 179.92; Protected 99.96",
-      "if_ignore": "Projected 7-day loss 29170.84"
+      "if_ignore": "Projected 7-day loss 28301.00"
     },
     "_traceability": {
       "numeric_paths": [
@@ -547,9 +552,9 @@
       "executed_at": null,
       "snoozed_until": "2026-05-02T09:54:34.675345+00:00",
       "ignored_at": null,
-      "impact_realized_24h": 44.92,
-      "impact_realized_7d": 314.45,
-      "last_verification_at": "2026-05-19T18:11:49.138811+00:00"
+      "impact_realized_24h": 35.55,
+      "impact_realized_7d": 248.86,
+      "last_verification_at": "2026-05-20T15:19:00.090661+00:00"
     },
     "action_2": {
       "action_id": "action_2",
@@ -559,9 +564,9 @@
       "executed_at": null,
       "snoozed_until": null,
       "ignored_at": null,
-      "impact_realized_24h": 44.92,
-      "impact_realized_7d": 314.45,
-      "last_verification_at": "2026-05-19T18:11:49.138740+00:00"
+      "impact_realized_24h": 35.55,
+      "impact_realized_7d": 248.86,
+      "last_verification_at": "2026-05-20T15:19:00.090605+00:00"
     },
     "action_3": {
       "action_id": "action_3",
@@ -653,15 +658,15 @@
       "action_id": "action_2",
       "window": "7d",
       "predicted_recovered_7d": 20.0,
-      "actual_recovered_7d": 314.45,
-      "delta": 294.45
+      "actual_recovered_7d": 248.86,
+      "delta": 228.86
     },
     {
       "action_id": "action_1",
       "window": "7d",
       "predicted_recovered_7d": 159.92,
-      "actual_recovered_7d": 314.45,
-      "delta": 154.53
+      "actual_recovered_7d": 248.86,
+      "delta": 88.94
     }
   ]
 }

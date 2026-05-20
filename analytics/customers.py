@@ -41,6 +41,31 @@ def _get_customers_by_days_since_order(store_id: int, days: int) -> list[dict]:
     return [dict(r) for r in results]
 
 
+def get_store_repeat_rate_90d(store_id: int) -> float:
+    """Share of 90-day ordering customers with 2+ orders in that window."""
+    sql = """
+        WITH customer_order_counts AS (
+            SELECT o.customer_id, COUNT(*) AS order_count_90d
+            FROM orders o
+            WHERE o.created_at >= NOW() - INTERVAL '90 days'
+              AND o.store_id = %(store_id)s
+              AND o.customer_id IS NOT NULL
+              AND COALESCE(o.financial_status, '') NOT IN ('voided', 'cancelled')
+            GROUP BY o.customer_id
+        )
+        SELECT
+            COALESCE(COUNT(*), 0) AS total_customers,
+            COALESCE(SUM(CASE WHEN order_count_90d >= 2 THEN 1 ELSE 0 END), 0) AS repeat_customers
+        FROM customer_order_counts;
+    """
+    with get_cursor() as cursor:
+        cursor.execute(sql, {"store_id": store_id})
+        row = cursor.fetchone() or {}
+    total = int(row.get("total_customers") or 0)
+    repeat = int(row.get("repeat_customers") or 0)
+    return (repeat / total) if total > 0 else 0.0
+
+
 def get_churned_customers(store_id: int) -> list[dict]:
     """
     Returns customers who haven't ordered in CHURN_DAYS_THRESHOLD days

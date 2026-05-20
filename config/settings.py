@@ -10,7 +10,7 @@ def _load_shopify_oauth_apps() -> dict[int, tuple[str, str]]:
     If none are set, fall back to legacy SHOPIFY_API_KEY / SHOPIFY_API_SECRET as app id 1.
     """
     apps: dict[int, tuple[str, str]] = {}
-    for n in range(1, 51):
+    for n in range(1, 11):
         key = (os.getenv(f"SHOPIFY_APP_{n}_KEY") or "").strip()
         secret = (os.getenv(f"SHOPIFY_APP_{n}_SECRET") or "").strip()
         if key and secret:

@@ -212,8 +212,8 @@ def run_insight(db: Any, *, store_id: int) -> dict:
             "total_discounted": total_discount_given,
         }
 
-    daily_impact = (total_discount_given / 30.0) * 0.40
-    total_value = total_discount_given * 0.40
+    daily_impact = total_discount_given / 30.0 if total_discount_given > 0 else 0.0
+    total_value = total_discount_given
     seven_day_projection = daily_impact * 7.0
 
     return {
