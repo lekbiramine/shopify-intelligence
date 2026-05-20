@@ -206,7 +206,33 @@ def _build_test_report_data(*, store_id: int) -> dict:
 
     for idx, action_type in enumerate(REGISTERED_INSIGHT_ACTIONS, start=1):
         metrics = dict(ALL_ACTION_TEST_METRICS.get(action_type) or {"store_aov": 35.0})
-        daily = round(float(metrics.get("estimated_value") or metrics.get("potential_recovery") or metrics.get("weekly_loss") or 120.0) / 30.0, 2)
+        raw_value = (
+            metrics.get("estimated_value")
+            or metrics.get("potential_recovery")
+            or metrics.get("weekly_loss")
+            or metrics.get("total_ltv_at_risk")
+            or metrics.get("upsell_opportunity")
+            or metrics.get("winback_opportunity")
+            or metrics.get("revenue_if_10pct_improvement")
+            or metrics.get("potential_revenue")
+            or metrics.get("abandoned_value")
+            or metrics.get("monthly_revenue")
+            or metrics.get("discount_amount")
+            or metrics.get("revenue_at_risk")
+            or metrics.get("lifetime_value")
+            or metrics.get("revenue_lost")
+            or metrics.get("profit_generated")
+            or metrics.get("revenue_generated")
+            or metrics.get("duplicate_charge_exposure")
+            or metrics.get("loyal_revenue_pool")
+            or metrics.get("estimated_leak_usd")
+            or metrics.get("total_discount_given")
+            or metrics.get("top_product_revenue")
+            or metrics.get("ltv_gap")
+            or metrics.get("price_increase_opportunity")
+            or 120.0
+        )
+        daily = round(float(raw_value) / 30.0, 2)
         weekly = round(daily * 7.0, 2)
         total_daily += daily
         total_value += weekly
